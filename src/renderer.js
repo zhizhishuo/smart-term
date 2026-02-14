@@ -232,6 +232,48 @@ document.addEventListener('DOMContentLoaded', async () => {
   let connectionFilterQuery = '';
   let connectionSortMode = 'name-asc';
   let currentLocale = 'zh-CN';
+  const TERM_THEME_DARK = {
+    background: '#1e1e1e',
+    foreground: '#d4d4d4',
+    cursor: '#569cd6',
+    black: '#000000',
+    red: '#cd3131',
+    green: '#0dbc79',
+    yellow: '#e5e510',
+    blue: '#2472c8',
+    magenta: '#bc3fbc',
+    cyan: '#11a8cd',
+    white: '#e5e5e5',
+    brightBlack: '#666666',
+    brightRed: '#f14c4c',
+    brightGreen: '#23d18b',
+    brightYellow: '#f5f543',
+    brightBlue: '#3b8eea',
+    brightMagenta: '#d670d6',
+    brightCyan: '#29b8db',
+    brightWhite: '#e5e5e5'
+  };
+  const TERM_THEME_LIGHT = {
+    background: '#f7f7f7',
+    foreground: '#1f1f1f',
+    cursor: '#005fb8',
+    black: '#000000',
+    red: '#b40000',
+    green: '#006b1f',
+    yellow: '#7a5d00',
+    blue: '#004a9f',
+    magenta: '#8c2bb3',
+    cyan: '#006f8e',
+    white: '#2f2f2f',
+    brightBlack: '#5a5a5a',
+    brightRed: '#c41515',
+    brightGreen: '#0a7f2f',
+    brightYellow: '#8a6a00',
+    brightBlue: '#0a5cb5',
+    brightMagenta: '#9a3cc3',
+    brightCyan: '#0b7f9f',
+    brightWhite: '#1d1d1d'
+  };
   const terminalShellState = {
     cwdByMode: { local: '', ssh: '' },
     activeCwd: '',
@@ -326,12 +368,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       r2rDisconnected: '未连接',
       r2rFavAdd: '收藏',
       r2rFavDel: '取消收藏',
+      r2rCredentialPlaceholder: '密码 / 私钥内容或路径',
+      r2rPassphrasePlaceholder: '私钥口令(可选)',
       r2rOpPlaceholder: '目录名/重命名新名称',
       r2rMkdir: '新建目录',
       r2rRename: '重命名',
       r2rDelete: '删除选中',
       r2rUpload: '上传',
       r2rDownload: '下载',
+      r2rLocalFs: 'Local 文件系统',
+      r2rSelectSshProfile: '选择SSH配置(可选)',
+      r2rNoSshProfiles: '暂无SSH配置',
       historyPanelTitle: '命令历史',
       historyPanelSubtitle: '双击可回放命令，支持关键字过滤',
       historySearchLabel: '搜索',
@@ -483,12 +530,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       r2rDisconnected: 'Disconnected',
       r2rFavAdd: 'Favorite',
       r2rFavDel: 'Unfavorite',
+      r2rCredentialPlaceholder: 'Password / private key content or path',
+      r2rPassphrasePlaceholder: 'Key passphrase (optional)',
       r2rOpPlaceholder: 'Directory name / new rename target',
       r2rMkdir: 'New Folder',
       r2rRename: 'Rename',
       r2rDelete: 'Delete Selected',
       r2rUpload: 'Upload',
       r2rDownload: 'Download',
+      r2rLocalFs: 'Local File System',
+      r2rSelectSshProfile: 'Select SSH profile (optional)',
+      r2rNoSshProfiles: 'No SSH profiles',
       historyPanelTitle: 'Command History',
       historyPanelSubtitle: 'Double-click to replay command, with keyword filtering',
       historySearchLabel: 'Search',
@@ -671,6 +723,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (els.r2rRightFavAdd) els.r2rRightFavAdd.textContent = t('r2rFavAdd');
     if (els.r2rLeftFavDel) els.r2rLeftFavDel.textContent = t('r2rFavDel');
     if (els.r2rRightFavDel) els.r2rRightFavDel.textContent = t('r2rFavDel');
+    setPlaceholder('r2r-left-password', 'r2rCredentialPlaceholder');
+    setPlaceholder('r2r-right-password', 'r2rCredentialPlaceholder');
+    setPlaceholder('r2r-left-passphrase', 'r2rPassphrasePlaceholder');
+    setPlaceholder('r2r-right-passphrase', 'r2rPassphrasePlaceholder');
     setPlaceholder('r2r-left-opname', 'r2rOpPlaceholder');
     setPlaceholder('r2r-right-opname', 'r2rOpPlaceholder');
     if (els.r2rLeftMkdir) els.r2rLeftMkdir.textContent = t('r2rMkdir');
@@ -751,6 +807,14 @@ document.addEventListener('DOMContentLoaded', async () => {
               ? 'connections'
               : 'terminal');
     updateMonitorNavState(!els.sidebar.classList.contains('hidden'));
+    updateTransferQueueSummary();
+    setTransferLastResult('');
+    setupR2ROptions(els.r2rLeftConfig);
+    setupR2ROptions(els.r2rRightConfig);
+    renderR2RQuickNav('left');
+    renderR2RQuickNav('right');
+    setupJumpConfigOptions(editingConfigId || (els.savedSelect ? els.savedSelect.value : ''), els.connJumpConfig ? els.connJumpConfig.value : '');
+    setupSshModalJumpOptions(els.inputJumpConfig ? els.inputJumpConfig.value : '');
   }
 
   function loadR2RDirPrefs() {
@@ -1485,6 +1549,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   }
 
+  function syncTerminalSizeToBackend(reflow = false) {
+    fitAddon.fit();
+    const dims = fitAddon.proposeDimensions();
+    if (dims && Number.isFinite(dims.cols) && Number.isFinite(dims.rows) && dims.cols > 0 && dims.rows > 0) {
+      window.terminal.resize(dims.cols, dims.rows);
+      if (reflow) {
+        try {
+          term.refresh(0, Math.max(0, term.rows - 1));
+        } catch (_err) {
+          // noop
+        }
+      }
+    }
+  }
+
   function showTransferProgress(title) {
     if (title) {
       els.transferProgressTitle.textContent = title;
@@ -1511,18 +1590,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       term.options.fontSize = Number(currentSettings.fontSize) || 14;
     }
     const isLight = currentSettings.theme === 'light';
-    term.options.theme = isLight
-      ? {
-          background: '#ffffff',
-          foreground: '#202020',
-          cursor: '#005fb8'
-        }
-      : {
-          background: '#1e1e1e',
-          foreground: '#d4d4d4',
-          cursor: '#569cd6'
-        };
-    fitAddon.fit();
+    const nextTheme = isLight ? TERM_THEME_LIGHT : TERM_THEME_DARK;
+    term.options.theme = { ...nextTheme };
+    term.options.minimumContrastRatio = isLight ? 4.5 : 1;
+    if (els.terminalContainer) {
+      els.terminalContainer.style.background = nextTheme.background;
+    }
+    syncTerminalSizeToBackend(true);
+    requestAnimationFrame(() => syncTerminalSizeToBackend(true));
+    setTimeout(() => syncTerminalSizeToBackend(true), 80);
     applyLocale(currentSettings.language || 'zh-CN');
   }
 
@@ -1839,32 +1915,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     els.keyRow.classList.toggle('hidden', !isKey);
   }
 
+  function setupR2ROptions(selectEl) {
+    if (!selectEl) return;
+    const previous = selectEl.value || '';
+    selectEl.innerHTML = '';
+    const localOpt = document.createElement('option');
+    localOpt.value = '__local__';
+    localOpt.textContent = t('r2rLocalFs');
+    selectEl.appendChild(localOpt);
+
+    const empty = document.createElement('option');
+    empty.value = '';
+    empty.textContent = cachedConfigs.length ? t('r2rSelectSshProfile') : t('r2rNoSshProfiles');
+    selectEl.appendChild(empty);
+    cachedConfigs.forEach((item) => {
+      const opt = document.createElement('option');
+      opt.value = item.id;
+      opt.textContent = `${item.name} (${item.username}@${item.host})`;
+      selectEl.appendChild(opt);
+    });
+    const exists = Array.from(selectEl.options).some((opt) => opt.value === previous);
+    selectEl.value = exists ? previous : (cachedConfigs.length ? previous || '' : '__local__');
+  }
+
   async function refreshSavedConfigs() {
     const list = await window.terminal.listSSHConfigs();
     cachedConfigs = Array.isArray(list) ? list : [];
     const previousSelected = editingConfigId || (els.savedSelect ? els.savedSelect.value : '');
     renderSavedConfigList(previousSelected);
 
-    const setupR2ROptions = (selectEl) => {
-      selectEl.innerHTML = '';
-      const localOpt = document.createElement('option');
-      localOpt.value = '__local__';
-      localOpt.textContent = currentLocale === 'en-US' ? 'Local File System' : 'Local 文件系统';
-      selectEl.appendChild(localOpt);
-
-      const empty = document.createElement('option');
-      empty.value = '';
-      empty.textContent = cachedConfigs.length
-        ? (currentLocale === 'en-US' ? 'Select SSH profile (optional)' : '选择SSH配置(可选)')
-        : (currentLocale === 'en-US' ? 'No SSH profiles' : '暂无SSH配置');
-      selectEl.appendChild(empty);
-      cachedConfigs.forEach((item) => {
-        const opt = document.createElement('option');
-        opt.value = item.id;
-        opt.textContent = `${item.name} (${item.username}@${item.host})`;
-        selectEl.appendChild(opt);
-      });
-    };
     setupR2ROptions(els.r2rLeftConfig);
     setupR2ROptions(els.r2rRightConfig);
     setupJumpConfigOptions(editingConfigId || (els.savedSelect ? els.savedSelect.value : ''), els.connJumpConfig ? els.connJumpConfig.value : '');
@@ -1896,7 +1975,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     els.inputJumpConfig.innerHTML = '';
     const noneOpt = document.createElement('option');
     noneOpt.value = '';
-    noneOpt.textContent = '无';
+    noneOpt.textContent = t('connNone');
     els.inputJumpConfig.appendChild(noneOpt);
     cachedConfigs.forEach((item) => {
       const opt = document.createElement('option');
@@ -3233,11 +3312,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   window.addEventListener('resize', () => {
-    fitAddon.fit();
-    const dims = fitAddon.proposeDimensions();
-    if (dims) {
-      window.terminal.resize(dims.cols, dims.rows);
-    }
+    syncTerminalSizeToBackend();
     applyR2RSplitRatio(r2rSplitRatio);
   });
   window.addEventListener('keydown', (event) => {
@@ -3249,10 +3324,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  const initialDims = fitAddon.proposeDimensions();
-  if (initialDims) {
-    window.terminal.resize(initialDims.cols, initialDims.rows);
-  }
+  syncTerminalSizeToBackend();
   refreshAuthFields();
   dockPanelsIntoWorkspace();
   showWorkspaceView('terminal');

@@ -844,42 +844,12 @@ function getCpuUsageSnapshot() {
 
 function getSystemInfo() {
   const cpuInfo = getCpuUsageSnapshot();
-  const totalMem = os.totalmem();
-  const freeMem = os.freemem();
-  const usedMem = Math.max(0, totalMem - freeMem);
-  let disk = { mount: '/', usedPercent: 0, total: 0, used: 0, available: 0 };
-
-  try {
-    const out = execSync('df -k /', { encoding: 'utf8' });
-    const lines = out.trim().split('\n');
-    if (lines.length >= 2) {
-      const cols = lines[1].trim().split(/\s+/);
-      if (cols.length >= 6) {
-        const total = Number(cols[1]) * 1024;
-        const used = Number(cols[2]) * 1024;
-        const avail = Number(cols[3]) * 1024;
-        const usedPercent = Number(String(cols[4]).replace('%', '')) || 0;
-        disk = {
-          mount: cols[5] || '/',
-          usedPercent,
-          total,
-          used,
-          available: avail
-        };
-      }
-    }
-  } catch (_err) {
-    // noop
-  }
+  const memory = getMemoryInfo();
+  const disk = getDiskInfoByPath(os.homedir() || '/');
 
   return {
     cpu: cpuInfo,
-    memory: {
-      total: totalMem,
-      used: usedMem,
-      free: freeMem,
-      usedPercent: totalMem > 0 ? (usedMem / totalMem) * 100 : 0
-    },
+    memory,
     disk,
     os: {
       platform: os.platform(),
@@ -888,6 +858,116 @@ function getSystemInfo() {
       uptimeSec: os.uptime()
     }
   };
+}
+
+function parseMemInfoFromProc() {
+  try {
+    const raw = fs.readFileSync('/proc/meminfo', 'utf8');
+    const map = {};
+    raw.split('\n').forEach((line) => {
+      const m = line.match(/^([A-Za-z_()]+):\s+(\d+)\s+kB$/);
+      if (m) map[m[1]] = Number(m[2]) * 1024;
+    });
+    const total = Number(map.MemTotal || 0);
+    const available = Number(map.MemAvailable || map.MemFree || 0);
+    if (total <= 0) return null;
+    const used = Math.max(0, total - available);
+    return {
+      total,
+      used,
+      free: available,
+      usedPercent: total > 0 ? (used / total) * 100 : 0,
+      source: 'proc-meminfo'
+    };
+  } catch (_err) {
+    return null;
+  }
+}
+
+function parseMemInfoFromVmStat() {
+  try {
+    const vmOut = execSync('vm_stat', { encoding: 'utf8' });
+    const pageSizeMatch = vmOut.match(/page size of (\d+) bytes/);
+    const pageSize = pageSizeMatch ? Number(pageSizeMatch[1]) : 4096;
+    const pageMap = {};
+    vmOut.split('\n').forEach((line) => {
+      const m = line.match(/^([^:]+):\s+([0-9.]+)\.?$/);
+      if (!m) return;
+      const key = String(m[1] || '').trim().toLowerCase();
+      pageMap[key] = Number(m[2] || 0);
+    });
+
+    const total = Number(os.totalmem() || 0);
+    if (total <= 0) return null;
+
+    // Closer to memory pressure available memory on macOS.
+    const freePages = Number(pageMap['pages free'] || 0);
+    const inactivePages = Number(pageMap['pages inactive'] || 0);
+    const speculativePages = Number(pageMap['pages speculative'] || 0);
+    const available = Math.max(0, (freePages + inactivePages + speculativePages) * pageSize);
+    const used = Math.max(0, total - available);
+    return {
+      total,
+      used,
+      free: available,
+      usedPercent: total > 0 ? (used / total) * 100 : 0,
+      source: 'vm_stat'
+    };
+  } catch (_err) {
+    return null;
+  }
+}
+
+function getMemoryInfo() {
+  const platform = os.platform();
+  if (platform === 'darwin') {
+    const vm = parseMemInfoFromVmStat();
+    if (vm) return vm;
+  }
+  if (platform === 'linux') {
+    const procMem = parseMemInfoFromProc();
+    if (procMem) return procMem;
+  }
+  const total = os.totalmem();
+  const free = os.freemem();
+  const used = Math.max(0, total - free);
+  return {
+    total,
+    used,
+    free,
+    usedPercent: total > 0 ? (used / total) * 100 : 0,
+    source: 'os'
+  };
+}
+
+function getDiskInfoByPath(targetPath) {
+  const safePath = String(targetPath || '/').trim() || '/';
+  let disk = { mount: safePath, usedPercent: 0, total: 0, used: 0, available: 0, source: 'unknown' };
+  try {
+    const out = execSync(`df -kP "${safePath}"`, { encoding: 'utf8' });
+    const lines = out.trim().split('\n');
+    if (lines.length >= 2) {
+      const cols = lines[1].trim().split(/\s+/);
+      if (cols.length >= 6) {
+        const total = Number(cols[1]) * 1024;
+        const used = Number(cols[2]) * 1024;
+        const avail = Number(cols[3]) * 1024;
+        const usedPercent = Number(String(cols[4]).replace('%', '')) || 0;
+        const mount = cols.slice(5).join(' ') || safePath;
+        disk = {
+          mount,
+          usedPercent,
+          total,
+          used,
+          available: avail,
+          source: 'df'
+        };
+      }
+    }
+  } catch (_err) {
+    // noop
+  }
+  return disk;
 }
 
 function expandHomePath(inputPath) {

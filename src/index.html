@@ -676,8 +676,8 @@
             background: #9cdcfe;
         }
         .r2r-toolbar {
-            display: grid;
-            grid-template-columns: minmax(130px, 1.1fr) minmax(130px, 1fr) minmax(130px, 1fr) auto auto auto;
+            display: flex;
+            flex-wrap: wrap;
             gap: 6px;
             margin-bottom: 8px;
             align-items: center;
@@ -694,8 +694,15 @@
             width: 100%;
             box-sizing: border-box;
         }
+        .r2r-toolbar input,
+        .r2r-toolbar select {
+            flex: 1 1 170px;
+            min-width: 150px;
+        }
         .r2r-toolbar button {
             width: auto;
+            flex: 0 0 auto;
+            min-width: 84px;
             white-space: nowrap;
             padding: 0 10px;
         }
@@ -1017,11 +1024,6 @@
             background: linear-gradient(90deg, #4ec9b0, #9cdcfe);
             transition: width 120ms linear;
         }
-        @media (max-width: 1280px) {
-            .r2r-toolbar {
-                grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr) auto auto auto;
-            }
-        }
         @media (max-width: 1080px) {
             .r2r-panels {
                 flex-direction: column;
@@ -1029,16 +1031,16 @@
             .r2r-splitter {
                 display: none;
             }
-            .r2r-toolbar {
-                grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr) auto auto auto;
-            }
         }
         @media (max-width: 760px) {
-            .r2r-toolbar {
-                grid-template-columns: 1fr 1fr;
+            .r2r-toolbar input,
+            .r2r-toolbar select {
+                flex-basis: 100%;
+                min-width: 0;
             }
             .r2r-toolbar button {
                 width: 100%;
+                min-width: 0;
             }
         }
     </style>
