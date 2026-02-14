@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('terminal', {
   connectSSH: (config) => ipcRenderer.invoke('terminal:connect-ssh', config),
   disconnectSSH: () => ipcRenderer.invoke('terminal:disconnect-ssh'),
   getState: () => ipcRenderer.invoke('terminal:get-state'),
+  getCwd: () => ipcRenderer.invoke('terminal:get-cwd'),
   write: (data) => ipcRenderer.send('terminal:write', data),
   resize: (cols, rows) => ipcRenderer.send('terminal:resize', { cols, rows }),
   onData: (callback) => {
@@ -28,6 +29,16 @@ contextBridge.exposeInMainWorld('terminal', {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on('terminal:status', handler);
     return () => ipcRenderer.removeListener('terminal:status', handler);
+  },
+  onCwd: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('terminal:cwd', handler);
+    return () => ipcRenderer.removeListener('terminal:cwd', handler);
+  },
+  onCommandBoundary: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('terminal:command-boundary', handler);
+    return () => ipcRenderer.removeListener('terminal:command-boundary', handler);
   },
   onReconnectState: (callback) => {
     const handler = (_event, payload) => callback(payload);

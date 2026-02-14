@@ -232,6 +232,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   let connectionFilterQuery = '';
   let connectionSortMode = 'name-asc';
   let currentLocale = 'zh-CN';
+  const terminalShellState = {
+    cwdByMode: { local: '', ssh: '' },
+    activeCwd: '',
+    inputLineBuffer: '',
+    historyCursor: -1,
+    historyDraft: '',
+    historyCommands: []
+  };
 
   const I18N = {
     'zh-CN': {
@@ -1192,6 +1200,104 @@ document.addEventListener('DOMContentLoaded', async () => {
     els.status.style.color = colors[level] || colors.info;
   }
 
+  function getCurrentTerminalMode() {
+    const tab = getCurrentTab();
+    return tab && tab.type === 'ssh' ? 'ssh' : 'local';
+  }
+
+  function updateTerminalCwd(mode, cwd) {
+    const modeKey = mode === 'ssh' ? 'ssh' : 'local';
+    terminalShellState.cwdByMode[modeKey] = String(cwd || '');
+    if (getCurrentTerminalMode() === modeKey) {
+      terminalShellState.activeCwd = terminalShellState.cwdByMode[modeKey];
+    }
+  }
+
+  async function refreshShellIntegrationSnapshot() {
+    try {
+      const payload = await window.terminal.getCwd();
+      if (!payload || typeof payload !== 'object') return;
+      if (payload.all && typeof payload.all === 'object') {
+        updateTerminalCwd('local', payload.all.local || '');
+        updateTerminalCwd('ssh', payload.all.ssh || '');
+      }
+      if (payload.mode) {
+        updateTerminalCwd(payload.mode, payload.cwd || '');
+      }
+    } catch (_err) {
+      // noop
+    }
+  }
+
+  function trackInputLineBuffer(data) {
+    if (typeof data !== 'string') return;
+    for (const ch of data) {
+      if (ch === '\r' || ch === '\n') {
+        terminalShellState.inputLineBuffer = '';
+        terminalShellState.historyCursor = -1;
+        terminalShellState.historyDraft = '';
+        continue;
+      }
+      if (ch === '\x15' || ch === '\x03') {
+        terminalShellState.inputLineBuffer = '';
+        continue;
+      }
+      if (ch === '\x7f' || ch === '\b') {
+        terminalShellState.inputLineBuffer = terminalShellState.inputLineBuffer.slice(0, -1);
+        continue;
+      }
+      if (ch >= ' ' && ch !== '\u007f') {
+        terminalShellState.inputLineBuffer += ch;
+      }
+    }
+  }
+
+  async function ensureCommandHistoryCache() {
+    if (terminalShellState.historyCommands.length) return;
+    try {
+      const result = await window.terminal.listHistory('', 300);
+      terminalShellState.historyCommands = Array.isArray(result)
+        ? result.map((item) => String(item.command || '')).filter(Boolean)
+        : [];
+    } catch (_err) {
+      terminalShellState.historyCommands = [];
+    }
+  }
+
+  function replaceTerminalInputLine(nextValue) {
+    window.terminal.write('\x15');
+    if (nextValue) {
+      window.terminal.write(nextValue);
+    }
+    terminalShellState.inputLineBuffer = nextValue;
+  }
+
+  async function navigateCommandHistory(step) {
+    await ensureCommandHistoryCache();
+    const list = terminalShellState.historyCommands;
+    if (!list.length) {
+      setStatus(lr('暂无可导航的命令历史', 'No command history available for navigation'), 'info');
+      return;
+    }
+    if (terminalShellState.historyCursor === -1) {
+      terminalShellState.historyDraft = terminalShellState.inputLineBuffer || '';
+    }
+
+    if (step < 0) {
+      terminalShellState.historyCursor = Math.min(list.length - 1, terminalShellState.historyCursor + 1);
+      replaceTerminalInputLine(list[terminalShellState.historyCursor] || '');
+      return;
+    }
+
+    if (terminalShellState.historyCursor <= 0) {
+      terminalShellState.historyCursor = -1;
+      replaceTerminalInputLine(terminalShellState.historyDraft || '');
+      return;
+    }
+    terminalShellState.historyCursor -= 1;
+    replaceTerminalInputLine(list[terminalShellState.historyCursor] || '');
+  }
+
   function setActiveNav(targetId) {
     const navIds = ['nav-terminal', 'nav-connections', 'nav-transfer', 'nav-history', 'nav-audit', 'nav-settings'];
     navIds.forEach((id) => {
@@ -1292,6 +1398,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       els.workspacePrimaryAction.textContent = t('viewHistoryPrimary');
       workspacePrimaryActionHandler = async () => {
         await window.terminal.clearHistory();
+        terminalShellState.historyCommands = [];
+        terminalShellState.historyCursor = -1;
         await renderHistoryList(els.historySearch.value);
         setStatus(lr('命令历史已清空', 'Command history cleared'), 'info');
       };
@@ -1543,6 +1651,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentTabId = tabId;
     renderTabs();
     term.options.disableStdin = reconnectStateActive && tab.type === 'ssh';
+    terminalShellState.activeCwd = terminalShellState.cwdByMode[tab.type === 'ssh' ? 'ssh' : 'local'] || '';
+    terminalShellState.historyCursor = -1;
+    terminalShellState.historyDraft = '';
+    terminalShellState.inputLineBuffer = '';
 
     term.clear();
     term.writeln(currentLocale === 'en-US'
@@ -2578,11 +2690,49 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       return;
     }
+    trackInputLineBuffer(data);
     window.terminal.write(data);
+  });
+
+  term.attachCustomKeyEventHandler((event) => {
+    if (!event || event.type !== 'keydown') return true;
+    const onlyAlt = event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
+    if (!onlyAlt) return true;
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      navigateCommandHistory(-1);
+      return false;
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      navigateCommandHistory(1);
+      return false;
+    }
+    return true;
   });
 
   window.terminal.onData((data) => {
     term.write(data);
+  });
+  window.terminal.onCwd((payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    updateTerminalCwd(payload.mode, payload.cwd || '');
+  });
+  window.terminal.onCommandBoundary((payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    const command = String(payload.command || '').trim();
+    if (command) {
+      terminalShellState.historyCommands = [
+        command,
+        ...terminalShellState.historyCommands.filter((item) => item !== command)
+      ].slice(0, 300);
+    }
+    if (payload.mode) {
+      updateTerminalCwd(payload.mode, payload.cwd || '');
+    }
+    terminalShellState.historyCursor = -1;
+    terminalShellState.historyDraft = '';
+    terminalShellState.inputLineBuffer = '';
   });
   window.terminal.onExit((payload) => {
     const source = payload && payload.source ? payload.source : 'terminal';
@@ -2789,6 +2939,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   els.btnHistoryClear.addEventListener('click', async () => {
     await window.terminal.clearHistory();
+    terminalShellState.historyCommands = [];
+    terminalShellState.historyCursor = -1;
     await renderHistoryList(els.historySearch.value);
     setStatus(lr('命令历史已清空', 'Command history cleared'), 'info');
   });
@@ -3127,6 +3279,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderR2RQuickNav('left');
   renderR2RQuickNav('right');
   applySettingsToTerminal(await window.terminal.getSettings());
+  await refreshShellIntegrationSnapshot();
   connectionFilterQuery = els.connSearch ? (els.connSearch.value || '') : '';
   connectionSortMode = els.connSort ? (els.connSort.value || 'name-asc') : 'name-asc';
   await refreshSavedConfigs();

@@ -33,7 +33,50 @@ let sshReconnectStartedAt = null;
 const sftpPanels = new Map();
 let lastCpuTimes = null;
 let currentInputBuffer = '';
+let localOutputProbeBuffer = '';
+let sshOutputProbeBuffer = '';
+const modeCwd = {
+  local: process.env.HOME || process.cwd(),
+  ssh: ''
+};
 const SSH_SECRET_SERVICE = 'smart-term.ssh';
+
+function getActiveModeCwd() {
+  if (activeMode === 'ssh') return modeCwd.ssh || '';
+  return modeCwd.local || process.env.HOME || process.cwd();
+}
+
+function decodeFileUriPath(rawPath) {
+  try {
+    return decodeURIComponent(String(rawPath || ''));
+  } catch (_err) {
+    return String(rawPath || '');
+  }
+}
+
+function probeCwdFromOutput(mode, chunk) {
+  const text = String(chunk || '');
+  if (!text) return;
+
+  const key = mode === 'ssh' ? 'ssh' : 'local';
+  const prev = key === 'ssh' ? sshOutputProbeBuffer : localOutputProbeBuffer;
+  const merged = `${prev}${text}`.slice(-8192);
+  const osc7Pattern = /\x1b\]7;file:\/\/[^/\x07\x1b]*(\/[^\x07\x1b]*)(?:\x07|\x1b\\)/g;
+  let match = null;
+  let cwd = '';
+  while ((match = osc7Pattern.exec(merged)) !== null) {
+    cwd = decodeFileUriPath(match[1] || '');
+  }
+  if (cwd && modeCwd[key] !== cwd) {
+    modeCwd[key] = cwd;
+    emitToRenderer('terminal:cwd', { mode: key, cwd, source: 'osc7' });
+  }
+  if (key === 'ssh') {
+    sshOutputProbeBuffer = merged.slice(-1024);
+  } else {
+    localOutputProbeBuffer = merged.slice(-1024);
+  }
+}
 
 function getSettingsPath() {
   return path.join(app.getPath('userData'), 'settings.json');
@@ -262,16 +305,19 @@ function ensureLocalPty() {
   const shell = os.platform() === 'win32'
     ? 'powershell.exe'
     : preferredShell || process.env.SHELL || '/bin/zsh';
+  const spawnCwd = process.env.HOME || process.cwd();
   try {
     localPty = pty.spawn(shell, [], {
       name: 'xterm-256color',
       cols: currentSize.cols,
       rows: currentSize.rows,
-      cwd: process.env.HOME || process.cwd(),
+      cwd: spawnCwd,
       env: process.env
     });
+    modeCwd.local = spawnCwd;
 
     localPty.onData((data) => {
+      probeCwdFromOutput('local', data);
       if (activeMode === 'local') {
         emitToRenderer('terminal:data', data);
       }
@@ -599,8 +645,10 @@ function connectSSH(config, opts = {}) {
             emitReconnectState({ active: false });
           }
           activeMode = 'ssh';
+          emitToRenderer('terminal:cwd', { mode: 'ssh', cwd: modeCwd.ssh || '' });
 
           stream.on('data', (data) => {
+            probeCwdFromOutput('ssh', data.toString('utf8'));
             if (activeMode === 'ssh') {
               emitToRenderer('terminal:data', data.toString('utf8'));
             }
@@ -1481,6 +1529,7 @@ ipcMain.handle('terminal:start-local', () => {
   const result = ensureLocalPty();
   if (result.ok) {
     emitToRenderer('terminal:status', { level: 'info', message: '已切换到本地终端' });
+    emitToRenderer('terminal:cwd', { mode: 'local', cwd: modeCwd.local || '' });
   }
   return result;
 });
@@ -1501,11 +1550,23 @@ ipcMain.handle('terminal:disconnect-ssh', () => {
   closeSSHSession('manual');
   activeMode = 'local';
   const result = ensureLocalPty();
+  emitToRenderer('terminal:cwd', { mode: 'local', cwd: modeCwd.local || '' });
   return { ok: result.ok, mode: 'local' };
 });
 
 ipcMain.handle('terminal:get-state', () => {
   return { mode: activeMode, sshConnected: !!sshSession };
+});
+
+ipcMain.handle('terminal:get-cwd', () => {
+  return {
+    mode: activeMode,
+    cwd: getActiveModeCwd(),
+    all: {
+      local: modeCwd.local || '',
+      ssh: modeCwd.ssh || ''
+    }
+  };
 });
 
 ipcMain.on('terminal:write', (_event, data) => {
@@ -1514,7 +1575,16 @@ ipcMain.on('terminal:write', (_event, data) => {
   // Track user-entered command line for history persistence.
   for (const ch of data) {
     if (ch === '\r' || ch === '\n') {
-      addCommandHistory(currentInputBuffer);
+      const submitted = currentInputBuffer.trim();
+      addCommandHistory(submitted);
+      if (submitted) {
+        emitToRenderer('terminal:command-boundary', {
+          mode: activeMode,
+          cwd: getActiveModeCwd(),
+          command: submitted,
+          submittedAt: new Date().toISOString()
+        });
+      }
       currentInputBuffer = '';
       continue;
     }
