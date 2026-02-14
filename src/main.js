@@ -44,6 +44,7 @@ function readSettings() {
     fontFamily: 'Monaco, Menlo, "Courier New", monospace',
     fontSize: 14,
     theme: 'dark',
+    language: 'zh-CN',
     defaultShell: '',
     sshAutoReconnect: true,
     sshReconnectMaxAttempts: 6,

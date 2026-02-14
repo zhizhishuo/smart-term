@@ -12,11 +12,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     (window.FitAddon && typeof window.FitAddon.FitAddon === 'function' && window.FitAddon.FitAddon);
 
   if (!TerminalCtor || !FitAddonCtor) {
-    document.getElementById('status').textContent = 'xterm加载失败';
+    document.getElementById('status').textContent = 'xterm load failed / xterm加载失败';
     return;
   }
   if (!window.terminal) {
-    document.getElementById('status').textContent = 'preload bridge丢失';
+    document.getElementById('status').textContent = 'preload bridge missing / preload bridge丢失';
     return;
   }
 
@@ -165,6 +165,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     settingFontFamily: document.getElementById('setting-font-family'),
     settingFontSize: document.getElementById('setting-font-size'),
     settingTheme: document.getElementById('setting-theme'),
+    settingLanguage: document.getElementById('setting-language'),
     settingShell: document.getElementById('setting-shell'),
     settingSshAutoReconnect: document.getElementById('setting-ssh-auto-reconnect'),
     settingSshRetryMax: document.getElementById('setting-ssh-retry-max'),
@@ -230,6 +231,519 @@ document.addEventListener('DOMContentLoaded', async () => {
   let editingConfigId = '';
   let connectionFilterQuery = '';
   let connectionSortMode = 'name-asc';
+  let currentLocale = 'zh-CN';
+
+  const I18N = {
+    'zh-CN': {
+      navTerminal: '终端',
+      navConnections: '连接',
+      navTransfer: '文件传输',
+      navHistory: '命令历史',
+      navAudit: '审计日志',
+      navSettings: '设置',
+      monitorOn: '监控: 开',
+      monitorOff: '监控: 关',
+      btnOpenHistory: '命令历史',
+      btnOpenSettings: '设置',
+      btnSaveSession: '保存会话',
+      btnLoadSession: '恢复会话',
+      quickReconnect: '快速重连',
+      actionOpenSsh: '新建SSH连接',
+      actionOpenConnections: 'SSH配置',
+      actionOpenTransfer: '打开文件传输',
+      actionOpenHistory: '命令历史',
+      actionOpenAudit: '审计日志',
+      actionOpenSettings: '设置',
+      actionDisconnect: '断开SSH',
+      actionSaveSession: '保存会话',
+      actionLoadSession: '恢复会话',
+      btnSettingsSave: '保存',
+      btnSettingsClose: '取消',
+      btnHistoryClose: '关闭',
+      btnAuditRefresh: '刷新',
+      btnAuditClear: '清空审计日志',
+      btnTransferRecover: '恢复中断传输',
+      btnCloseR2R: '关闭',
+      connPanelTitle: 'SSH 连接管理',
+      connPanelSubtitle: '查看全部配置，支持编辑、删除、快速连接',
+      connListTitle: '已保存 SSH 列表',
+      connEditTitle: '配置编辑',
+      connSearchPlaceholder: '搜索 名称/主机/用户名',
+      connSortNameAsc: '名称 A-Z',
+      connSortNameDesc: '名称 Z-A',
+      connSortHostAsc: '主机 A-Z',
+      connSortHostDesc: '主机 Z-A',
+      btnLoadSaved: '加载到右侧编辑',
+      btnDeleteSaved: '删除当前配置',
+      connNameLabel: '连接名称',
+      connNamePlaceholder: '例如: prod-server',
+      connHostLabel: '主机',
+      connHostPlaceholder: '192.168.1.100',
+      connPortLabel: '端口',
+      connUserLabel: '用户名',
+      connUserPlaceholder: 'root',
+      connAuthLabel: '认证方式',
+      authPassword: '密码',
+      authKey: '私钥',
+      connJumpLabel: '跳板机配置(可选)',
+      connNone: '无',
+      connPasswordLabel: '密码',
+      connPasswordPlaceholder: '密码（保存后进入系统安全存储）',
+      connKeyLabel: '私钥内容或私钥文件路径',
+      connKeyPlaceholder: '-----BEGIN... 或 ~/.ssh/id_rsa',
+      connPassphraseLabel: '私钥口令(可选)',
+      btnConnNew: '新建空白',
+      btnConnConnect: '连接此配置',
+      btnConnSave: '保存/更新',
+      r2rPanelTitle: '双面板 SFTP',
+      r2rPanelSubtitle: '支持本地/远程双向拖拽，含目录递归与进度反馈',
+      transferConflictLabel: '冲突策略',
+      strategyOverwrite: '覆盖',
+      strategySkip: '跳过',
+      strategyRename: '重命名',
+      btnTransferQueueClear: '清空待队列',
+      btnTransferRetryFailed: '重试失败',
+      btnTransferShowFailed: '查看失败项',
+      btnTransferHideFailed: '收起失败项',
+      btnTransferRetrySelected: '重试此项',
+      btnRetryOne: '重试',
+      statusRetriedFailedOne: '已重试该失败任务',
+      statusRetriedCurrentOne: '已重试当前失败项',
+      historyEmpty: '暂无命令历史',
+      auditEmpty: '暂无审计日志',
+      transferFailedDetailEmpty: '请选择失败项查看详情',
+      r2rConnect: '连接',
+      r2rUp: '上级',
+      r2rRefresh: '刷新',
+      r2rDisconnected: '未连接',
+      r2rFavAdd: '收藏',
+      r2rFavDel: '取消收藏',
+      r2rOpPlaceholder: '目录名/重命名新名称',
+      r2rMkdir: '新建目录',
+      r2rRename: '重命名',
+      r2rDelete: '删除选中',
+      r2rUpload: '上传',
+      r2rDownload: '下载',
+      historyPanelTitle: '命令历史',
+      historyPanelSubtitle: '双击可回放命令，支持关键字过滤',
+      historySearchLabel: '搜索',
+      historySearchPlaceholder: '输入关键字过滤历史命令',
+      btnHistoryClear: '清空历史',
+      auditPanelTitle: '审计日志',
+      auditPanelSubtitle: '记录连接、传输、删除和失败原因等关键操作',
+      auditSearchLabel: '搜索',
+      auditSearchPlaceholder: '输入关键字过滤审计事件',
+      settingsPanelTitle: '设置',
+      settingsPanelSubtitle: '实时调整终端显示与连接策略',
+      settingFontFamilyLabel: '字体',
+      settingFontSizeLabel: '字号',
+      settingThemeLabel: '主题',
+      settingLanguageLabel: 'Language / 语言',
+      settingShellLabel: '默认Shell（下次新本地标签生效）',
+      settingSshAutoReconnectLabel: 'SSH自动重连',
+      settingSshAutoReconnectOn: '开启',
+      settingSshAutoReconnectOff: '关闭',
+      settingSshRetryMaxLabel: '最大重试次数',
+      settingSshRetryDelayLabel: '重连基础间隔(ms)',
+      settingSshKeepaliveLabel: 'Keepalive间隔(ms)',
+      settingSshKeepaliveMaxLabel: 'Keepalive最大丢包次数',
+      sshModalTitle: 'SSH连接',
+      sshNameLabel: '连接名称',
+      sshNamePlaceholder: '例如: prod-server',
+      sshHostLabel: '主机',
+      sshHostPlaceholder: '192.168.1.100',
+      sshPortLabel: '端口',
+      sshUserLabel: '用户名',
+      sshUserPlaceholder: 'root',
+      sshAuthLabel: '认证方式',
+      sshJumpLabel: '跳板机配置(可选)',
+      sshPasswordLabel: '密码',
+      sshPasswordPlaceholder: '密码不会被保存',
+      sshKeyLabel: '私钥内容',
+      sshKeyPlaceholder: '粘贴私钥内容',
+      sshSaveConfigLabel: '保存到本地配置（凭据进系统安全存储）',
+      btnCancelSsh: '取消',
+      btnConnectSsh: '连接',
+      transferRecoverBase: '恢复中断传输',
+      transferRecoverUpload: '恢复中断传输(上传)',
+      transferRecoverDownload: '恢复中断传输(下载)',
+      transferRecoverR2r: '恢复中断传输(R2R)',
+      viewConnectionsTitle: '连接',
+      viewConnectionsSubtitle: '集中管理 SSH 配置并快速连接',
+      viewConnectionsPrimary: '新建空白配置',
+      viewTransferTitle: '文件传输',
+      viewTransferSubtitle: '双面板传输，支持远程/本地拖拽与目录递归',
+      viewTransferPrimary: '切回终端',
+      viewHistoryTitle: '命令历史',
+      viewHistorySubtitle: '搜索、复用并管理历史命令',
+      viewHistoryPrimary: '清空历史',
+      viewAuditTitle: '审计日志',
+      viewAuditSubtitle: '关键操作记录与安全追踪',
+      viewAuditPrimary: '清空审计日志',
+      viewSettingsTitle: '设置',
+      viewSettingsSubtitle: '终端显示、默认Shell与SSH重连参数',
+      viewSettingsPrimary: '保存设置',
+      viewTerminalTitle: '终端',
+      viewTerminalSubtitle: '多标签终端，支持本地与SSH会话',
+      viewTerminalPrimary: '新建本地标签',
+      settingsSaved: '设置已保存',
+      settingsSaveFailed: '设置保存失败',
+      statusMonitorShown: '系统监控已显示',
+      statusMonitorHidden: '系统监控已隐藏'
+    },
+    'en-US': {
+      navTerminal: 'Terminal',
+      navConnections: 'Connections',
+      navTransfer: 'Transfer',
+      navHistory: 'History',
+      navAudit: 'Audit',
+      navSettings: 'Settings',
+      monitorOn: 'Monitor: On',
+      monitorOff: 'Monitor: Off',
+      btnOpenHistory: 'History',
+      btnOpenSettings: 'Settings',
+      btnSaveSession: 'Save Session',
+      btnLoadSession: 'Restore Session',
+      quickReconnect: 'Quick Reconnect',
+      actionOpenSsh: 'New SSH',
+      actionOpenConnections: 'SSH Configs',
+      actionOpenTransfer: 'Open Transfer',
+      actionOpenHistory: 'History',
+      actionOpenAudit: 'Audit',
+      actionOpenSettings: 'Settings',
+      actionDisconnect: 'Disconnect SSH',
+      actionSaveSession: 'Save Session',
+      actionLoadSession: 'Restore Session',
+      btnSettingsSave: 'Save',
+      btnSettingsClose: 'Cancel',
+      btnHistoryClose: 'Close',
+      btnAuditRefresh: 'Refresh',
+      btnAuditClear: 'Clear Audit Logs',
+      btnTransferRecover: 'Resume Interrupted Transfer',
+      btnCloseR2R: 'Close',
+      connPanelTitle: 'SSH Connection Manager',
+      connPanelSubtitle: 'View all saved profiles, edit/delete them, and connect quickly',
+      connListTitle: 'Saved SSH Profiles',
+      connEditTitle: 'Profile Editor',
+      connSearchPlaceholder: 'Search by name/host/username',
+      connSortNameAsc: 'Name A-Z',
+      connSortNameDesc: 'Name Z-A',
+      connSortHostAsc: 'Host A-Z',
+      connSortHostDesc: 'Host Z-A',
+      btnLoadSaved: 'Load to Editor',
+      btnDeleteSaved: 'Delete Selected',
+      connNameLabel: 'Connection Name',
+      connNamePlaceholder: 'e.g. prod-server',
+      connHostLabel: 'Host',
+      connHostPlaceholder: '192.168.1.100',
+      connPortLabel: 'Port',
+      connUserLabel: 'Username',
+      connUserPlaceholder: 'root',
+      connAuthLabel: 'Auth Method',
+      authPassword: 'Password',
+      authKey: 'Private Key',
+      connJumpLabel: 'Jump Host (Optional)',
+      connNone: 'None',
+      connPasswordLabel: 'Password',
+      connPasswordPlaceholder: 'Stored in system secure storage after save',
+      connKeyLabel: 'Private key content or key file path',
+      connKeyPlaceholder: '-----BEGIN... or ~/.ssh/id_rsa',
+      connPassphraseLabel: 'Key Passphrase (Optional)',
+      btnConnNew: 'New Blank',
+      btnConnConnect: 'Connect This Profile',
+      btnConnSave: 'Save / Update',
+      r2rPanelTitle: 'Dual-pane SFTP',
+      r2rPanelSubtitle: 'Bidirectional local/remote drag-drop with recursive directory support',
+      transferConflictLabel: 'Conflict Strategy',
+      strategyOverwrite: 'Overwrite',
+      strategySkip: 'Skip',
+      strategyRename: 'Rename',
+      btnTransferQueueClear: 'Clear Pending Queue',
+      btnTransferRetryFailed: 'Retry Failed',
+      btnTransferShowFailed: 'Show Failed Items',
+      btnTransferHideFailed: 'Hide Failed Items',
+      btnTransferRetrySelected: 'Retry This Item',
+      btnRetryOne: 'Retry',
+      statusRetriedFailedOne: 'Retried this failed task',
+      statusRetriedCurrentOne: 'Retried selected failed task',
+      historyEmpty: 'No command history',
+      auditEmpty: 'No audit logs',
+      transferFailedDetailEmpty: 'Select a failed item to view details',
+      r2rConnect: 'Connect',
+      r2rUp: 'Up',
+      r2rRefresh: 'Refresh',
+      r2rDisconnected: 'Disconnected',
+      r2rFavAdd: 'Favorite',
+      r2rFavDel: 'Unfavorite',
+      r2rOpPlaceholder: 'Directory name / new rename target',
+      r2rMkdir: 'New Folder',
+      r2rRename: 'Rename',
+      r2rDelete: 'Delete Selected',
+      r2rUpload: 'Upload',
+      r2rDownload: 'Download',
+      historyPanelTitle: 'Command History',
+      historyPanelSubtitle: 'Double-click to replay command, with keyword filtering',
+      historySearchLabel: 'Search',
+      historySearchPlaceholder: 'Filter history by keyword',
+      btnHistoryClear: 'Clear History',
+      auditPanelTitle: 'Audit Logs',
+      auditPanelSubtitle: 'Track critical events like connect/transfer/delete/failures',
+      auditSearchLabel: 'Search',
+      auditSearchPlaceholder: 'Filter audit events by keyword',
+      settingsPanelTitle: 'Settings',
+      settingsPanelSubtitle: 'Tune terminal display and connection behavior',
+      settingFontFamilyLabel: 'Font',
+      settingFontSizeLabel: 'Font Size',
+      settingThemeLabel: 'Theme',
+      settingLanguageLabel: 'Language',
+      settingShellLabel: 'Default Shell (applies to new local tabs)',
+      settingSshAutoReconnectLabel: 'SSH Auto Reconnect',
+      settingSshAutoReconnectOn: 'On',
+      settingSshAutoReconnectOff: 'Off',
+      settingSshRetryMaxLabel: 'Max Retry Attempts',
+      settingSshRetryDelayLabel: 'Base Reconnect Delay (ms)',
+      settingSshKeepaliveLabel: 'Keepalive Interval (ms)',
+      settingSshKeepaliveMaxLabel: 'Max Keepalive Misses',
+      sshModalTitle: 'SSH Connection',
+      sshNameLabel: 'Connection Name',
+      sshNamePlaceholder: 'e.g. prod-server',
+      sshHostLabel: 'Host',
+      sshHostPlaceholder: '192.168.1.100',
+      sshPortLabel: 'Port',
+      sshUserLabel: 'Username',
+      sshUserPlaceholder: 'root',
+      sshAuthLabel: 'Auth Method',
+      sshJumpLabel: 'Jump Host (Optional)',
+      sshPasswordLabel: 'Password',
+      sshPasswordPlaceholder: 'Password is not saved by default',
+      sshKeyLabel: 'Private Key',
+      sshKeyPlaceholder: 'Paste private key content',
+      sshSaveConfigLabel: 'Save to local profile (secrets go to system secure storage)',
+      btnCancelSsh: 'Cancel',
+      btnConnectSsh: 'Connect',
+      transferRecoverBase: 'Resume Interrupted Transfer',
+      transferRecoverUpload: 'Resume Interrupted Transfer (Upload)',
+      transferRecoverDownload: 'Resume Interrupted Transfer (Download)',
+      transferRecoverR2r: 'Resume Interrupted Transfer (R2R)',
+      viewConnectionsTitle: 'Connections',
+      viewConnectionsSubtitle: 'Manage SSH configs and connect quickly',
+      viewConnectionsPrimary: 'New Blank Config',
+      viewTransferTitle: 'File Transfer',
+      viewTransferSubtitle: 'Dual-pane transfer with remote/local drag-drop and recursive directories',
+      viewTransferPrimary: 'Back to Terminal',
+      viewHistoryTitle: 'Command History',
+      viewHistorySubtitle: 'Search, reuse, and manage command history',
+      viewHistoryPrimary: 'Clear History',
+      viewAuditTitle: 'Audit Logs',
+      viewAuditSubtitle: 'Track critical operations and security events',
+      viewAuditPrimary: 'Clear Audit Logs',
+      viewSettingsTitle: 'Settings',
+      viewSettingsSubtitle: 'Terminal display, default shell, and SSH reconnect behavior',
+      viewSettingsPrimary: 'Save Settings',
+      viewTerminalTitle: 'Terminal',
+      viewTerminalSubtitle: 'Multi-tab terminal with local and SSH sessions',
+      viewTerminalPrimary: 'New Local Tab',
+      settingsSaved: 'Settings saved',
+      settingsSaveFailed: 'Failed to save settings',
+      statusMonitorShown: 'System monitor shown',
+      statusMonitorHidden: 'System monitor hidden'
+    }
+  };
+
+  function t(key) {
+    const pack = I18N[currentLocale] || I18N['zh-CN'];
+    return pack[key] || key;
+  }
+
+  function lr(zhText, enText) {
+    return currentLocale === 'en-US' ? enText : zhText;
+  }
+
+  function applyI18nStaticTexts() {
+    const setText = (selector, key) => {
+      const node = document.querySelector(selector);
+      if (node) node.textContent = t(key);
+    };
+    const setLabel = (forId, key) => {
+      const node = document.querySelector(`label[for="${forId}"]`);
+      if (node) node.textContent = t(key);
+    };
+    const setPlaceholder = (id, key) => {
+      const node = document.getElementById(id);
+      if (node) node.setAttribute('placeholder', t(key));
+    };
+    const setSelectOption = (id, value, key) => {
+      const node = document.getElementById(id);
+      if (!node) return;
+      const opt = Array.from(node.options || []).find((item) => item.value === value);
+      if (opt) opt.textContent = t(key);
+    };
+
+    if (els.navTerminal) els.navTerminal.textContent = t('navTerminal');
+    if (els.navConnections) els.navConnections.textContent = t('navConnections');
+    if (els.navTransfer) els.navTransfer.textContent = t('navTransfer');
+    if (els.navHistory) els.navHistory.textContent = t('navHistory');
+    if (els.navAudit) els.navAudit.textContent = t('navAudit');
+    if (els.navSettings) els.navSettings.textContent = t('navSettings');
+    if (els.btnOpenHistory) els.btnOpenHistory.textContent = t('btnOpenHistory');
+    if (els.btnOpenSettings) els.btnOpenSettings.textContent = t('btnOpenSettings');
+    if (els.btnSaveSession) els.btnSaveSession.textContent = t('btnSaveSession');
+    if (els.btnLoadSession) els.btnLoadSession.textContent = t('btnLoadSession');
+    if (els.btnQuickReconnect) els.btnQuickReconnect.textContent = t('quickReconnect');
+    if (els.workspaceActionOpenSsh) els.workspaceActionOpenSsh.textContent = t('actionOpenSsh');
+    if (els.workspaceActionOpenConnections) els.workspaceActionOpenConnections.textContent = t('actionOpenConnections');
+    if (els.workspaceActionOpenTransfer) els.workspaceActionOpenTransfer.textContent = t('actionOpenTransfer');
+    if (els.workspaceActionOpenHistory) els.workspaceActionOpenHistory.textContent = t('actionOpenHistory');
+    if (els.workspaceActionOpenAudit) els.workspaceActionOpenAudit.textContent = t('actionOpenAudit');
+    if (els.workspaceActionOpenSettings) els.workspaceActionOpenSettings.textContent = t('actionOpenSettings');
+    if (els.workspaceActionDisconnect) els.workspaceActionDisconnect.textContent = t('actionDisconnect');
+    if (els.workspaceActionSaveSession) els.workspaceActionSaveSession.textContent = t('actionSaveSession');
+    if (els.workspaceActionLoadSession) els.workspaceActionLoadSession.textContent = t('actionLoadSession');
+    if (els.btnSettingsSave) els.btnSettingsSave.textContent = t('btnSettingsSave');
+    if (els.btnSettingsClose) els.btnSettingsClose.textContent = t('btnSettingsClose');
+    if (els.btnHistoryClose) els.btnHistoryClose.textContent = t('btnHistoryClose');
+    if (els.btnAuditRefresh) els.btnAuditRefresh.textContent = t('btnAuditRefresh');
+    if (els.btnAuditClear) els.btnAuditClear.textContent = t('btnAuditClear');
+    if (els.btnTransferRecover) els.btnTransferRecover.textContent = t('btnTransferRecover');
+    if (els.btnCloseR2R) els.btnCloseR2R.textContent = t('btnCloseR2R');
+
+    setText('#connections-panel .panel-title', 'connPanelTitle');
+    setText('#connections-panel .panel-subtitle', 'connPanelSubtitle');
+    setText('#connections-panel .connections-list-card .connections-section-title', 'connListTitle');
+    setText('#connections-panel .connections-edit-card .connections-section-title', 'connEditTitle');
+    if (els.connSearch) els.connSearch.setAttribute('placeholder', t('connSearchPlaceholder'));
+    setSelectOption('conn-sort', 'name-asc', 'connSortNameAsc');
+    setSelectOption('conn-sort', 'name-desc', 'connSortNameDesc');
+    setSelectOption('conn-sort', 'host-asc', 'connSortHostAsc');
+    setSelectOption('conn-sort', 'host-desc', 'connSortHostDesc');
+    if (els.btnLoadSaved) els.btnLoadSaved.textContent = t('btnLoadSaved');
+    if (els.btnDeleteSaved) els.btnDeleteSaved.textContent = t('btnDeleteSaved');
+    setLabel('conn-name', 'connNameLabel');
+    setPlaceholder('conn-name', 'connNamePlaceholder');
+    setLabel('conn-host', 'connHostLabel');
+    setPlaceholder('conn-host', 'connHostPlaceholder');
+    setLabel('conn-port', 'connPortLabel');
+    setLabel('conn-username', 'connUserLabel');
+    setPlaceholder('conn-username', 'connUserPlaceholder');
+    setLabel('conn-auth-type', 'connAuthLabel');
+    setSelectOption('conn-auth-type', 'password', 'authPassword');
+    setSelectOption('conn-auth-type', 'key', 'authKey');
+    setLabel('conn-jump-config', 'connJumpLabel');
+    setSelectOption('conn-jump-config', '', 'connNone');
+    setLabel('conn-password', 'connPasswordLabel');
+    setPlaceholder('conn-password', 'connPasswordPlaceholder');
+    setLabel('conn-key', 'connKeyLabel');
+    setPlaceholder('conn-key', 'connKeyPlaceholder');
+    setLabel('conn-passphrase', 'connPassphraseLabel');
+    if (els.btnConnNew) els.btnConnNew.textContent = t('btnConnNew');
+    if (els.btnConnConnect) els.btnConnConnect.textContent = t('btnConnConnect');
+    if (els.btnConnSave) els.btnConnSave.textContent = t('btnConnSave');
+
+    setText('#r2r-modal .panel-title', 'r2rPanelTitle');
+    setText('#r2r-modal .panel-subtitle', 'r2rPanelSubtitle');
+    setLabel('transfer-conflict-strategy', 'transferConflictLabel');
+    setSelectOption('transfer-conflict-strategy', 'overwrite', 'strategyOverwrite');
+    setSelectOption('transfer-conflict-strategy', 'skip', 'strategySkip');
+    setSelectOption('transfer-conflict-strategy', 'rename', 'strategyRename');
+    if (els.btnTransferQueueClear) els.btnTransferQueueClear.textContent = t('btnTransferQueueClear');
+    if (els.btnTransferRetryFailed) els.btnTransferRetryFailed.textContent = t('btnTransferRetryFailed');
+    if (els.btnTransferShowFailed && !transferFailedListVisible) els.btnTransferShowFailed.textContent = t('btnTransferShowFailed');
+    if (els.btnTransferRetrySelected) els.btnTransferRetrySelected.textContent = t('btnTransferRetrySelected');
+    if (els.transferFailedDetailText && !selectedFailedTransferId) els.transferFailedDetailText.textContent = t('transferFailedDetailEmpty');
+
+    if (els.r2rLeftConnect) els.r2rLeftConnect.textContent = t('r2rConnect');
+    if (els.r2rRightConnect) els.r2rRightConnect.textContent = t('r2rConnect');
+    if (els.r2rLeftUp) els.r2rLeftUp.textContent = t('r2rUp');
+    if (els.r2rRightUp) els.r2rRightUp.textContent = t('r2rUp');
+    if (els.r2rLeftRefresh) els.r2rLeftRefresh.textContent = t('r2rRefresh');
+    if (els.r2rRightRefresh) els.r2rRightRefresh.textContent = t('r2rRefresh');
+    if (els.r2rLeftPath && !r2rState.left.connected) els.r2rLeftPath.textContent = t('r2rDisconnected');
+    if (els.r2rRightPath && !r2rState.right.connected) els.r2rRightPath.textContent = t('r2rDisconnected');
+    if (els.r2rLeftFavAdd) els.r2rLeftFavAdd.textContent = t('r2rFavAdd');
+    if (els.r2rRightFavAdd) els.r2rRightFavAdd.textContent = t('r2rFavAdd');
+    if (els.r2rLeftFavDel) els.r2rLeftFavDel.textContent = t('r2rFavDel');
+    if (els.r2rRightFavDel) els.r2rRightFavDel.textContent = t('r2rFavDel');
+    setPlaceholder('r2r-left-opname', 'r2rOpPlaceholder');
+    setPlaceholder('r2r-right-opname', 'r2rOpPlaceholder');
+    if (els.r2rLeftMkdir) els.r2rLeftMkdir.textContent = t('r2rMkdir');
+    if (els.r2rRightMkdir) els.r2rRightMkdir.textContent = t('r2rMkdir');
+    if (els.r2rLeftRename) els.r2rLeftRename.textContent = t('r2rRename');
+    if (els.r2rRightRename) els.r2rRightRename.textContent = t('r2rRename');
+    if (els.r2rLeftDelete) els.r2rLeftDelete.textContent = t('r2rDelete');
+    if (els.r2rRightDelete) els.r2rRightDelete.textContent = t('r2rDelete');
+    if (els.r2rLeftUpload) els.r2rLeftUpload.textContent = t('r2rUpload');
+    if (els.r2rRightUpload) els.r2rRightUpload.textContent = t('r2rUpload');
+    if (els.r2rLeftDownload) els.r2rLeftDownload.textContent = t('r2rDownload');
+    if (els.r2rRightDownload) els.r2rRightDownload.textContent = t('r2rDownload');
+
+    setText('#history-modal .panel-title', 'historyPanelTitle');
+    setText('#history-modal .panel-subtitle', 'historyPanelSubtitle');
+    setLabel('history-search', 'historySearchLabel');
+    setPlaceholder('history-search', 'historySearchPlaceholder');
+    if (els.btnHistoryClear) els.btnHistoryClear.textContent = t('btnHistoryClear');
+
+    setText('#audit-modal .panel-title', 'auditPanelTitle');
+    setText('#audit-modal .panel-subtitle', 'auditPanelSubtitle');
+    setLabel('audit-search', 'auditSearchLabel');
+    setPlaceholder('audit-search', 'auditSearchPlaceholder');
+
+    setText('#settings-modal .panel-title', 'settingsPanelTitle');
+    setText('#settings-modal .panel-subtitle', 'settingsPanelSubtitle');
+    setLabel('setting-font-family', 'settingFontFamilyLabel');
+    setLabel('setting-font-size', 'settingFontSizeLabel');
+    setLabel('setting-theme', 'settingThemeLabel');
+    setLabel('setting-language', 'settingLanguageLabel');
+    setLabel('setting-shell', 'settingShellLabel');
+    setLabel('setting-ssh-auto-reconnect', 'settingSshAutoReconnectLabel');
+    setLabel('setting-ssh-retry-max', 'settingSshRetryMaxLabel');
+    setLabel('setting-ssh-retry-delay', 'settingSshRetryDelayLabel');
+    setLabel('setting-ssh-keepalive', 'settingSshKeepaliveLabel');
+    setLabel('setting-ssh-keepalive-max', 'settingSshKeepaliveMaxLabel');
+    setSelectOption('setting-ssh-auto-reconnect', 'false', 'settingSshAutoReconnectOff');
+    setSelectOption('setting-ssh-auto-reconnect', 'true', 'settingSshAutoReconnectOn');
+
+    setText('#ssh-modal h3', 'sshModalTitle');
+    setLabel('ssh-name', 'sshNameLabel');
+    setPlaceholder('ssh-name', 'sshNamePlaceholder');
+    setLabel('ssh-host', 'sshHostLabel');
+    setPlaceholder('ssh-host', 'sshHostPlaceholder');
+    setLabel('ssh-port', 'sshPortLabel');
+    setLabel('ssh-username', 'sshUserLabel');
+    setPlaceholder('ssh-username', 'sshUserPlaceholder');
+    setLabel('ssh-auth-type', 'sshAuthLabel');
+    setSelectOption('ssh-auth-type', 'password', 'authPassword');
+    setSelectOption('ssh-auth-type', 'key', 'authKey');
+    setLabel('ssh-jump-config', 'sshJumpLabel');
+    setSelectOption('ssh-jump-config', '', 'connNone');
+    setLabel('ssh-password', 'sshPasswordLabel');
+    setPlaceholder('ssh-password', 'sshPasswordPlaceholder');
+    setLabel('ssh-key', 'sshKeyLabel');
+    setPlaceholder('ssh-key', 'sshKeyPlaceholder');
+    const saveCfgLabel = document.querySelector('#ssh-save-config')?.parentElement;
+    if (saveCfgLabel && saveCfgLabel.lastChild && saveCfgLabel.lastChild.nodeType === Node.TEXT_NODE) {
+      saveCfgLabel.lastChild.textContent = ` ${t('sshSaveConfigLabel')}`;
+    }
+    if (els.btnCancelSsh) els.btnCancelSsh.textContent = t('btnCancelSsh');
+    if (els.btnConnectSsh) els.btnConnectSsh.textContent = t('btnConnectSsh');
+  }
+
+  function applyLocale(locale) {
+    currentLocale = locale === 'en-US' ? 'en-US' : 'zh-CN';
+    document.documentElement.setAttribute('lang', currentLocale === 'en-US' ? 'en' : 'zh-CN');
+    applyI18nStaticTexts();
+    updateWorkspaceHeader((els.r2rModal && els.r2rModal.classList.contains('show'))
+      ? 'transfer'
+      : (els.historyModal && els.historyModal.classList.contains('show'))
+        ? 'history'
+        : (els.auditModal && els.auditModal.classList.contains('show'))
+          ? 'audit'
+          : (els.settingsModal && els.settingsModal.classList.contains('show'))
+            ? 'settings'
+            : (els.connectionsPanel && els.connectionsPanel.classList.contains('show'))
+              ? 'connections'
+              : 'terminal');
+    updateMonitorNavState(!els.sidebar.classList.contains('hidden'));
+  }
 
   function loadR2RDirPrefs() {
     try {
@@ -315,19 +829,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     const hasPending = !!(pendingTransferRecovery && pendingTransferRecovery.request);
     els.btnTransferRecover.disabled = !hasPending;
     if (!hasPending) {
-      els.btnTransferRecover.textContent = '恢复中断传输';
+      els.btnTransferRecover.textContent = t('transferRecoverBase');
       els.btnTransferRecover.title = '';
       return;
     }
     const req = pendingTransferRecovery.request || {};
     const label = req.kind === 'upload-local'
-      ? '恢复中断传输(上传)'
+      ? t('transferRecoverUpload')
       : req.kind === 'download-local'
-        ? '恢复中断传输(下载)'
-        : '恢复中断传输(R2R)';
+        ? t('transferRecoverDownload')
+        : t('transferRecoverR2r');
     els.btnTransferRecover.textContent = label;
     const savedAt = pendingTransferRecovery.savedAt || '';
-    els.btnTransferRecover.title = savedAt ? `中断时间: ${savedAt}` : '';
+    els.btnTransferRecover.title = savedAt ? lr(`中断时间: ${savedAt}`, `Interrupted at: ${savedAt}`) : '';
   }
 
   function loadPendingTransferRecovery() {
@@ -365,7 +879,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const pending = transferQueue.filter((item) => item.status === 'pending').length;
     const running = transferQueue.filter((item) => item.status === 'running').length;
     const failed = transferQueue.filter((item) => item.status === 'failed').length;
-    els.transferQueueSummary.textContent = `队列: ${pending} (运行中: ${running}, 失败: ${failed})`;
+    els.transferQueueSummary.textContent = lr(
+      `队列: ${pending} (运行中: ${running}, 失败: ${failed})`,
+      `Queue: ${pending} (running: ${running}, failed: ${failed})`
+    );
     if (els.btnTransferQueueClear) {
       els.btnTransferQueueClear.disabled = pending === 0;
     }
@@ -374,7 +891,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (els.btnTransferShowFailed) {
       els.btnTransferShowFailed.disabled = failed === 0;
-      els.btnTransferShowFailed.textContent = transferFailedListVisible ? '收起失败项' : '查看失败项';
+      els.btnTransferShowFailed.textContent = transferFailedListVisible ? t('btnTransferHideFailed') : t('btnTransferShowFailed');
     }
     if (els.btnTransferRetrySelected) {
       const selected = transferQueue.find((item) => item.id === selectedFailedTransferId && item.status === 'failed');
@@ -400,29 +917,35 @@ document.addEventListener('DOMContentLoaded', async () => {
       warn: '#dcdcaa',
       error: '#f48771'
     };
-    els.transferLastResult.textContent = `最近结果: ${message || '-'}`;
+    els.transferLastResult.textContent = lr(`最近结果: ${message || '-'}`, `Last result: ${message || '-'}`);
     els.transferLastResult.style.color = colors[level] || colors.info;
   }
 
   function transferRequestLabel(req) {
-    if (!req || typeof req !== 'object') return '未知任务';
+    if (!req || typeof req !== 'object') return lr('未知任务', 'Unknown task');
     if (req.kind === 'upload-local') {
-      return `上传 ${Array.isArray(req.localPaths) ? req.localPaths[0] || '' : ''}`;
+      return lr(
+        `上传 ${Array.isArray(req.localPaths) ? req.localPaths[0] || '' : ''}`,
+        `Upload ${Array.isArray(req.localPaths) ? req.localPaths[0] || '' : ''}`
+      );
     }
     if (req.kind === 'download-local') {
-      return `下载 ${Array.isArray(req.sourcePaths) ? req.sourcePaths[0] || '' : ''}`;
+      return lr(
+        `下载 ${Array.isArray(req.sourcePaths) ? req.sourcePaths[0] || '' : ''}`,
+        `Download ${Array.isArray(req.sourcePaths) ? req.sourcePaths[0] || '' : ''}`
+      );
     }
     return `R2R ${req.sourcePath || ''}`;
   }
 
   function classifyTransferError(message) {
     const text = String(message || '').toLowerCase();
-    if (text.includes('permission denied') || text.includes('权限')) return '权限问题';
-    if (text.includes('no such file') || text.includes('not exist') || text.includes('不存在')) return '路径不存在';
-    if (text.includes('auth') || text.includes('认证') || text.includes('password') || text.includes('private key')) return '认证失败';
-    if (text.includes('timeout') || text.includes('timed out') || text.includes('超时')) return '网络超时';
-    if (text.includes('conflict') || text.includes('冲突') || text.includes('exists')) return '文件冲突';
-    return '未知错误';
+    if (text.includes('permission denied') || text.includes('权限')) return lr('权限问题', 'Permission issue');
+    if (text.includes('no such file') || text.includes('not exist') || text.includes('不存在')) return lr('路径不存在', 'Path not found');
+    if (text.includes('auth') || text.includes('认证') || text.includes('password') || text.includes('private key')) return lr('认证失败', 'Authentication failed');
+    if (text.includes('timeout') || text.includes('timed out') || text.includes('超时')) return lr('网络超时', 'Network timeout');
+    if (text.includes('conflict') || text.includes('冲突') || text.includes('exists')) return lr('文件冲突', 'File conflict');
+    return lr('未知错误', 'Unknown error');
   }
 
   function showFailedTransferDetail(item) {
@@ -444,12 +967,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         ? (req.localDir || '')
         : `${req.toPanel || '?'}:${req.targetDirSnapshot || ''}`;
     const details = [
-      `任务: ${transferRequestLabel(req)}`,
-      `类型: ${req.kind || 'unknown'}`,
-      `来源: ${sourcePath || '-'}`,
-      `目标: ${targetPath || '-'}`,
-      `错误分类: ${category}`,
-      `错误: ${item.error || 'unknown'}`
+      lr(`任务: ${transferRequestLabel(req)}`, `Task: ${transferRequestLabel(req)}`),
+      lr(`类型: ${req.kind || 'unknown'}`, `Type: ${req.kind || 'unknown'}`),
+      lr(`来源: ${sourcePath || '-'}`, `Source: ${sourcePath || '-'}`),
+      lr(`目标: ${targetPath || '-'}`, `Target: ${targetPath || '-'}`),
+      lr(`错误分类: ${category}`, `Category: ${category}`),
+      lr(`错误: ${item.error || 'unknown'}`, `Error: ${item.error || 'unknown'}`)
     ].join('\n');
     els.transferFailedDetailText.textContent = details;
     els.transferFailedDetail.classList.remove('hidden');
@@ -481,7 +1004,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const failedItems = transferQueue.filter((item) => item.status === 'failed');
     if (!failedItems.length) {
       selectedFailedTransferId = '';
-      els.transferFailedList.innerHTML = '<div class="transfer-failed-item">暂无失败项</div>';
+      els.transferFailedList.innerHTML = `<div class="transfer-failed-item">${escapeHtml(lr('暂无失败项', 'No failed items'))}</div>`;
       if (els.transferFailedDetail) {
         els.transferFailedDetail.classList.add('hidden');
       }
@@ -507,13 +1030,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
       const retryBtn = document.createElement('button');
       retryBtn.className = 'transfer-failed-retry';
-      retryBtn.textContent = '重试';
+      retryBtn.textContent = t('btnRetryOne');
       retryBtn.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
         const ok = retryFailedQueueItem(item.id);
         if (ok) {
-          setStatus('已重试该失败任务', 'info');
+          setStatus(t('statusRetriedFailedOne'), 'info');
         }
       });
       rowInner.appendChild(labelSpan);
@@ -554,7 +1077,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
     transferQueue.push(item);
     updateTransferQueueSummary();
-    setStatus('传输任务已加入队列', 'info');
+    setStatus(lr('传输任务已加入队列', 'Transfer task added to queue'), 'info');
     processTransferQueue();
     return item.id;
   }
@@ -566,24 +1089,24 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function canRecoverTransferRequest(request) {
     if (!request || typeof request !== 'object') {
-      return { ok: false, error: '恢复任务不存在或已损坏' };
+      return { ok: false, error: lr('恢复任务不存在或已损坏', 'Recovery task is missing or corrupted') };
     }
     if (request.kind === 'r2r') {
       const fromReady = !!(r2rState[request.fromPanel] && r2rState[request.fromPanel].connected);
       const toReady = !!(r2rState[request.toPanel] && r2rState[request.toPanel].connected);
       if (!fromReady || !toReady) {
-        return { ok: false, error: '请先连接传输两侧面板后再恢复 R2R 任务' };
+        return { ok: false, error: lr('请先连接传输两侧面板后再恢复 R2R 任务', 'Connect both transfer panels before resuming an R2R task') };
       }
       return { ok: true };
     }
     if (request.kind === 'upload-local' || request.kind === 'download-local') {
       const sideReady = !!(r2rState[request.side] && r2rState[request.side].connected);
       if (!sideReady) {
-        return { ok: false, error: '请先连接目标面板后再恢复本地传输任务' };
+        return { ok: false, error: lr('请先连接目标面板后再恢复本地传输任务', 'Connect the target panel before resuming local transfer tasks') };
       }
       return { ok: true };
     }
-    return { ok: false, error: `不支持恢复任务类型: ${request.kind}` };
+    return { ok: false, error: lr(`不支持恢复任务类型: ${request.kind}`, `Unsupported recovery task type: ${request.kind}`) };
   }
 
   function renderR2RQuickNav(side) {
@@ -594,7 +1117,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     recentSelect.innerHTML = '';
     const rDefault = document.createElement('option');
     rDefault.value = '';
-    rDefault.textContent = state.recentDirs.length ? '最近目录' : '最近目录(空)';
+    rDefault.textContent = state.recentDirs.length
+      ? lr('最近目录', 'Recent')
+      : lr('最近目录(空)', 'Recent (empty)');
     recentSelect.appendChild(rDefault);
     state.recentDirs.forEach((dir) => {
       const opt = document.createElement('option');
@@ -606,7 +1131,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     favSelect.innerHTML = '';
     const fDefault = document.createElement('option');
     fDefault.value = '';
-    fDefault.textContent = state.favoriteDirs.length ? '收藏目录' : '收藏目录(空)';
+    fDefault.textContent = state.favoriteDirs.length
+      ? lr('收藏目录', 'Favorites')
+      : lr('收藏目录(空)', 'Favorites (empty)');
     favSelect.appendChild(fDefault);
     state.favoriteDirs.forEach((dir) => {
       const opt = document.createElement('option');
@@ -677,7 +1204,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function updateMonitorNavState(visible) {
     if (!els.navMonitor) return;
-    els.navMonitor.textContent = visible ? '监控: 开' : '监控: 关';
+    els.navMonitor.textContent = visible ? t('monitorOn') : t('monitorOff');
     els.navMonitor.classList.toggle('active', visible);
   }
 
@@ -685,7 +1212,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const shouldShow = typeof force === 'boolean' ? force : els.sidebar.classList.contains('hidden');
     els.sidebar.classList.toggle('hidden', !shouldShow);
     updateMonitorNavState(shouldShow);
-    setStatus(shouldShow ? '系统监控已显示' : '系统监控已隐藏', 'info');
+    setStatus(shouldShow ? t('statusMonitorShown') : t('statusMonitorHidden'), 'info');
     return shouldShow;
   }
 
@@ -740,18 +1267,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   function updateWorkspaceHeader(view) {
     if (!els.workspaceViewTitle || !els.workspaceViewSubtitle || !els.workspacePrimaryAction) return;
     if (view === 'connections') {
-      els.workspaceViewTitle.textContent = '连接';
-      els.workspaceViewSubtitle.textContent = '集中管理 SSH 配置并快速连接';
-      els.workspacePrimaryAction.textContent = '新建空白配置';
+      els.workspaceViewTitle.textContent = t('viewConnectionsTitle');
+      els.workspaceViewSubtitle.textContent = t('viewConnectionsSubtitle');
+      els.workspacePrimaryAction.textContent = t('viewConnectionsPrimary');
       workspacePrimaryActionHandler = () => {
         if (els.btnConnNew) els.btnConnNew.click();
       };
       return;
     }
     if (view === 'transfer') {
-      els.workspaceViewTitle.textContent = '文件传输';
-      els.workspaceViewSubtitle.textContent = '双面板传输，支持远程/本地拖拽与目录递归';
-      els.workspacePrimaryAction.textContent = '切回终端';
+      els.workspaceViewTitle.textContent = t('viewTransferTitle');
+      els.workspaceViewSubtitle.textContent = t('viewTransferSubtitle');
+      els.workspacePrimaryAction.textContent = t('viewTransferPrimary');
       workspacePrimaryActionHandler = () => {
         setActiveNav('nav-terminal');
         showWorkspaceView('terminal');
@@ -760,39 +1287,39 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     if (view === 'history') {
-      els.workspaceViewTitle.textContent = '命令历史';
-      els.workspaceViewSubtitle.textContent = '搜索、复用并管理历史命令';
-      els.workspacePrimaryAction.textContent = '清空历史';
+      els.workspaceViewTitle.textContent = t('viewHistoryTitle');
+      els.workspaceViewSubtitle.textContent = t('viewHistorySubtitle');
+      els.workspacePrimaryAction.textContent = t('viewHistoryPrimary');
       workspacePrimaryActionHandler = async () => {
         await window.terminal.clearHistory();
         await renderHistoryList(els.historySearch.value);
-        setStatus('命令历史已清空', 'info');
+        setStatus(lr('命令历史已清空', 'Command history cleared'), 'info');
       };
       return;
     }
     if (view === 'audit') {
-      els.workspaceViewTitle.textContent = '审计日志';
-      els.workspaceViewSubtitle.textContent = '关键操作记录与安全追踪';
-      els.workspacePrimaryAction.textContent = '清空审计日志';
+      els.workspaceViewTitle.textContent = t('viewAuditTitle');
+      els.workspaceViewSubtitle.textContent = t('viewAuditSubtitle');
+      els.workspacePrimaryAction.textContent = t('viewAuditPrimary');
       workspacePrimaryActionHandler = async () => {
         await window.terminal.clearAudit();
         await renderAuditList(els.auditSearch.value);
-        setStatus('审计日志已清空', 'warn');
+        setStatus(lr('审计日志已清空', 'Audit logs cleared'), 'warn');
       };
       return;
     }
     if (view === 'settings') {
-      els.workspaceViewTitle.textContent = '设置';
-      els.workspaceViewSubtitle.textContent = '终端显示、默认Shell与SSH重连参数';
-      els.workspacePrimaryAction.textContent = '保存设置';
+      els.workspaceViewTitle.textContent = t('viewSettingsTitle');
+      els.workspaceViewSubtitle.textContent = t('viewSettingsSubtitle');
+      els.workspacePrimaryAction.textContent = t('viewSettingsPrimary');
       workspacePrimaryActionHandler = async () => {
         els.btnSettingsSave.click();
       };
       return;
     }
-    els.workspaceViewTitle.textContent = '终端';
-    els.workspaceViewSubtitle.textContent = '多标签终端，支持本地与SSH会话';
-    els.workspacePrimaryAction.textContent = '新建本地标签';
+    els.workspaceViewTitle.textContent = t('viewTerminalTitle');
+    els.workspaceViewSubtitle.textContent = t('viewTerminalSubtitle');
+    els.workspacePrimaryAction.textContent = t('viewTerminalPrimary');
     workspacePrimaryActionHandler = () => {
       els.btnLocal.click();
     };
@@ -888,6 +1415,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           cursor: '#569cd6'
         };
     fitAddon.fit();
+    applyLocale(currentSettings.language || 'zh-CN');
   }
 
   async function openHistoryModal() {
@@ -913,7 +1441,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const list = await window.terminal.listHistory(query || '', 200);
     els.historyList.innerHTML = '';
     if (!Array.isArray(list) || !list.length) {
-      els.historyList.innerHTML = '<div class="monitor-row">暂无命令历史</div>';
+      els.historyList.innerHTML = `<div class="monitor-row">${escapeHtml(t('historyEmpty'))}</div>`;
       return;
     }
     list.forEach((item) => {
@@ -929,7 +1457,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.terminal.write(item.command);
         window.terminal.write('\r');
         closeHistoryModal();
-        setStatus('已回放历史命令', 'success');
+        setStatus(lr('已回放历史命令', 'History command replayed'), 'success');
       });
       els.historyList.appendChild(row);
     });
@@ -939,7 +1467,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const list = await window.terminal.listAudit(query || '', 400);
     els.auditList.innerHTML = '';
     if (!Array.isArray(list) || !list.length) {
-      els.auditList.innerHTML = '<div class="monitor-row">暂无审计日志</div>';
+      els.auditList.innerHTML = `<div class="monitor-row">${escapeHtml(t('auditEmpty'))}</div>`;
       return;
     }
     list.forEach((item) => {
@@ -966,6 +1494,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     els.settingFontFamily.value = currentSettings.fontFamily || 'Monaco, Menlo, "Courier New", monospace';
     els.settingFontSize.value = String(currentSettings.fontSize || 14);
     els.settingTheme.value = currentSettings.theme || 'dark';
+    if (els.settingLanguage) {
+      els.settingLanguage.value = currentSettings.language === 'en-US' ? 'en-US' : 'zh-CN';
+    }
     els.settingShell.value = currentSettings.defaultShell || '';
     els.settingSshAutoReconnect.value = String(currentSettings.sshAutoReconnect !== false);
     els.settingSshRetryMax.value = String(currentSettings.sshReconnectMaxAttempts || 6);
@@ -1014,15 +1545,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     term.options.disableStdin = reconnectStateActive && tab.type === 'ssh';
 
     term.clear();
-    term.writeln(`\x1b[1;36m切换到标签: ${tab.title}\x1b[0m`);
+    term.writeln(currentLocale === 'en-US'
+      ? `\x1b[1;36mSwitched to tab: ${tab.title}\x1b[0m`
+      : `\x1b[1;36m切换到标签: ${tab.title}\x1b[0m`);
 
     if (tab.type === 'local') {
       const result = await window.terminal.startLocal();
       if (!result || !result.ok) {
-        setStatus('切换本地标签失败', 'error');
+        setStatus(lr('切换本地标签失败', 'Failed to switch local tab'), 'error');
         return;
       }
-      setStatus(`当前标签: ${tab.title}`, 'success');
+      setStatus(lr(`当前标签: ${tab.title}`, `Current tab: ${tab.title}`), 'success');
       return;
     }
 
@@ -1030,7 +1563,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (tab.lastConnectPayload) {
         const result = await window.terminal.connectSSH(tab.lastConnectPayload);
         if (result && result.ok) {
-          setStatus(`已连接 ${tab.lastConnectPayload.username}@${tab.lastConnectPayload.host}`, 'success');
+          setStatus(lr(
+            `已连接 ${tab.lastConnectPayload.username}@${tab.lastConnectPayload.host}`,
+            `Connected ${tab.lastConnectPayload.username}@${tab.lastConnectPayload.host}`
+          ), 'success');
           return;
         }
       }
@@ -1047,7 +1583,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       refreshAuthFields();
       openModal();
-      setStatus(`标签 ${tab.title} 需要重新连接SSH`, 'info');
+      setStatus(lr(`标签 ${tab.title} 需要重新连接SSH`, `Tab ${tab.title} requires SSH reconnection`), 'info');
     }
   }
 
@@ -1077,20 +1613,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentTabId
     };
     localStorage.setItem(SESSION_KEY, JSON.stringify(payload));
-    setStatus('会话已保存', 'success');
+    setStatus(lr('会话已保存', 'Session saved'), 'success');
   }
 
   async function loadWorkspaceSession() {
     const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) {
-      setStatus('没有已保存的会话', 'info');
+      setStatus(lr('没有已保存的会话', 'No saved session found'), 'info');
       return;
     }
     let parsed = null;
     try {
       parsed = JSON.parse(raw);
     } catch (_err) {
-      setStatus('会话文件解析失败', 'error');
+      setStatus(lr('会话文件解析失败', 'Failed to parse session data'), 'error');
       return;
     }
 
@@ -1110,7 +1646,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       : tabs[0].id;
     renderTabs();
     await switchToTab(currentTabId);
-    setStatus('会话已恢复', 'success');
+    setStatus(lr('会话已恢复', 'Session restored'), 'success');
   }
 
   async function updateSystemMonitor() {
@@ -1125,7 +1661,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (cpuMonitorMode === 'detailed') {
       els.cpuCoreList.classList.remove('hidden');
       els.cpuOverviewLine.classList.add('hidden');
-      els.cpuModeToggle.textContent = '切换到总览';
+      els.cpuModeToggle.textContent = lr('切换到总览', 'Switch to overview');
 
       els.cpuCoreList.innerHTML = '';
       perCore.forEach((core) => {
@@ -1142,7 +1678,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
       els.cpuCoreList.classList.add('hidden');
       els.cpuOverviewLine.classList.remove('hidden');
-      els.cpuModeToggle.textContent = '切换到详细';
+      els.cpuModeToggle.textContent = lr('切换到详细', 'Switch to detailed');
       const topCores = [...perCore]
         .sort((a, b) => Number(b.usagePercent || 0) - Number(a.usagePercent || 0))
         .slice(0, 4)
@@ -1155,8 +1691,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const memTotal = Number(info.memory && info.memory.total ? info.memory.total : 0);
     const memFree = Number(info.memory && info.memory.free ? info.memory.free : 0);
     const memPct = Number(info.memory && info.memory.usedPercent ? info.memory.usedPercent : 0);
-    els.memLine.textContent = `已用 ${formatBytes(memUsed)} / 总计 ${formatBytes(memTotal)} (${memPct.toFixed(1)}%)`;
-    els.memLine2.textContent = `可用 ${formatBytes(memFree)}`;
+    els.memLine.textContent = lr(
+      `已用 ${formatBytes(memUsed)} / 总计 ${formatBytes(memTotal)} (${memPct.toFixed(1)}%)`,
+      `Used ${formatBytes(memUsed)} / Total ${formatBytes(memTotal)} (${memPct.toFixed(1)}%)`
+    );
+    els.memLine2.textContent = lr(`可用 ${formatBytes(memFree)}`, `Available ${formatBytes(memFree)}`);
     els.memBar.style.width = `${Math.max(0, Math.min(100, memPct))}%`;
 
     const diskUsed = Number(info.disk && info.disk.used ? info.disk.used : 0);
@@ -1164,8 +1703,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const diskFree = Number(info.disk && info.disk.available ? info.disk.available : 0);
     const diskPct = Number(info.disk && info.disk.usedPercent ? info.disk.usedPercent : 0);
     const mount = info.disk && info.disk.mount ? info.disk.mount : '/';
-    els.diskLine.textContent = `${mount} 已用 ${formatBytes(diskUsed)} / 总计 ${formatBytes(diskTotal)} (${diskPct.toFixed(1)}%)`;
-    els.diskLine2.textContent = `可用 ${formatBytes(diskFree)}`;
+    els.diskLine.textContent = lr(
+      `${mount} 已用 ${formatBytes(diskUsed)} / 总计 ${formatBytes(diskTotal)} (${diskPct.toFixed(1)}%)`,
+      `${mount} Used ${formatBytes(diskUsed)} / Total ${formatBytes(diskTotal)} (${diskPct.toFixed(1)}%)`
+    );
+    els.diskLine2.textContent = lr(`可用 ${formatBytes(diskFree)}`, `Available ${formatBytes(diskFree)}`);
     els.diskBar.style.width = `${Math.max(0, Math.min(100, diskPct))}%`;
   }
 
@@ -1195,12 +1737,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       selectEl.innerHTML = '';
       const localOpt = document.createElement('option');
       localOpt.value = '__local__';
-      localOpt.textContent = 'Local 文件系统';
+      localOpt.textContent = currentLocale === 'en-US' ? 'Local File System' : 'Local 文件系统';
       selectEl.appendChild(localOpt);
 
       const empty = document.createElement('option');
       empty.value = '';
-      empty.textContent = cachedConfigs.length ? '选择SSH配置(可选)' : '暂无SSH配置';
+      empty.textContent = cachedConfigs.length
+        ? (currentLocale === 'en-US' ? 'Select SSH profile (optional)' : '选择SSH配置(可选)')
+        : (currentLocale === 'en-US' ? 'No SSH profiles' : '暂无SSH配置');
       selectEl.appendChild(empty);
       cachedConfigs.forEach((item) => {
         const opt = document.createElement('option');
@@ -1221,7 +1765,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     els.connJumpConfig.innerHTML = '';
     const noneOpt = document.createElement('option');
     noneOpt.value = '';
-    noneOpt.textContent = '无';
+    noneOpt.textContent = t('connNone');
     els.connJumpConfig.appendChild(noneOpt);
     cachedConfigs.forEach((item) => {
       if (excludeId && item.id === excludeId) return;
@@ -1294,7 +1838,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!visible.length) {
       const emptyOpt = document.createElement('option');
       emptyOpt.value = '';
-      emptyOpt.textContent = cachedConfigs.length ? '当前筛选无结果' : '暂无已保存SSH配置';
+      emptyOpt.textContent = cachedConfigs.length
+        ? lr('当前筛选无结果', 'No matches for current filter')
+        : lr('暂无已保存SSH配置', 'No saved SSH profiles');
       els.savedSelect.appendChild(emptyOpt);
       return;
     }
@@ -1384,7 +1930,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const port = Number(els.connPort.value) || 22;
     const username = els.connUsername.value.trim();
     if (!host || !username) {
-      setStatus('保存失败：主机和用户名必填', 'error');
+      setStatus(lr('保存失败：主机和用户名必填', 'Save failed: host and username are required'), 'error');
       return;
     }
     const rawKey = String(els.connKey.value || '').trim();
@@ -1409,7 +1955,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
     const result = await window.terminal.saveSSHConfig(payload);
     if (!result || !result.ok) {
-      setStatus(`保存配置失败: ${result && result.error ? result.error : 'unknown'}`, 'error');
+      setStatus(lr(
+        `保存配置失败: ${result && result.error ? result.error : 'unknown'}`,
+        `Failed to save profile: ${result && result.error ? result.error : 'unknown'}`
+      ), 'error');
       return;
     }
     editingConfigId = result.item && result.item.id ? result.item.id : editingConfigId;
@@ -1421,7 +1970,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await loadConnectionEditorFromConfig(selected);
       }
     }
-    setStatus('SSH配置已保存', 'success');
+    setStatus(lr('SSH配置已保存', 'SSH profile saved'), 'success');
   }
 
   async function connectFromConnectionEditor() {
@@ -1435,13 +1984,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       jumpConfigId: els.connJumpConfig && els.connJumpConfig.value ? els.connJumpConfig.value : ''
     };
     if (!payload.host || !payload.username) {
-      setStatus('连接失败：主机和用户名必填', 'error');
+      setStatus(lr('连接失败：主机和用户名必填', 'Connection failed: host and username are required'), 'error');
       return;
     }
     if (authType === 'key') {
       const key = String(els.connKey.value || '').trim();
       if (!key || !key.includes('BEGIN')) {
-        setStatus('终端SSH连接需要粘贴私钥内容（非文件路径）', 'error');
+        setStatus(lr('终端SSH连接需要粘贴私钥内容（非文件路径）', 'SSH terminal connection requires pasted private key content (not file path)'), 'error');
         return;
       }
       payload.privateKey = key;
@@ -1450,10 +1999,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       payload.password = els.connPassword.value || '';
     }
 
-    setStatus(`连接SSH ${payload.username}@${payload.host}:${payload.port}...`);
+    setStatus(lr(
+      `连接SSH ${payload.username}@${payload.host}:${payload.port}...`,
+      `Connecting SSH ${payload.username}@${payload.host}:${payload.port}...`
+    ));
     const result = await connectSshWithTrustFlow(payload);
     if (!result || !result.ok) {
-      setStatus(`SSH连接失败: ${result && result.error ? result.error : 'unknown error'}`, 'error');
+      setStatus(lr(
+        `SSH连接失败: ${result && result.error ? result.error : 'unknown error'}`,
+        `SSH connection failed: ${result && result.error ? result.error : 'unknown error'}`
+      ), 'error');
       return;
     }
 
@@ -1476,7 +2031,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderTabs();
     setActiveNav('nav-terminal');
     showWorkspaceView('terminal');
-    setStatus(`SSH已连接 ${payload.username}@${payload.host}:${payload.port}`, 'success');
+    setStatus(lr(
+      `SSH已连接 ${payload.username}@${payload.host}:${payload.port}`,
+      `SSH connected ${payload.username}@${payload.host}:${payload.port}`
+    ), 'success');
     term.focus();
   }
 
@@ -1486,24 +2044,26 @@ document.addEventListener('DOMContentLoaded', async () => {
       const result = await window.terminal.connectSSH(attemptPayload);
       if (result && result.ok) return result;
       if (result && result.needsHostTrust) {
-        const trust = window.confirm(
-          `首次连接主机 ${result.host}:${result.port}\n指纹: ${result.fingerprint}\n\n是否信任并继续连接？`
-        );
+        const trust = window.confirm(lr(
+          `首次连接主机 ${result.host}:${result.port}\n指纹: ${result.fingerprint}\n\n是否信任并继续连接？`,
+          `First time connecting to ${result.host}:${result.port}\nFingerprint: ${result.fingerprint}\n\nTrust this host and continue?`
+        ));
         if (!trust) {
-          return { ok: false, error: '已取消：未信任该主机指纹' };
+          return { ok: false, error: lr('已取消：未信任该主机指纹', 'Cancelled: host fingerprint was not trusted') };
         }
         attemptPayload = { ...payload, trustNewHost: true };
         continue;
       }
       if (result && result.hostKeyMismatch) {
-        window.alert(
-          `主机指纹不一致，已拒绝连接。\n主机: ${result.host}:${result.port}\n当前: ${result.fingerprint}\n历史: ${result.expectedFingerprint}`
-        );
+        window.alert(lr(
+          `主机指纹不一致，已拒绝连接。\n主机: ${result.host}:${result.port}\n当前: ${result.fingerprint}\n历史: ${result.expectedFingerprint}`,
+          `Host fingerprint mismatch. Connection rejected.\nHost: ${result.host}:${result.port}\nCurrent: ${result.fingerprint}\nExpected: ${result.expectedFingerprint}`
+        ));
         return result;
       }
       return result;
     }
-    return { ok: false, error: '主机信任流程失败，请重试' };
+    return { ok: false, error: lr('主机信任流程失败，请重试', 'Host trust flow failed, please retry') };
   }
 
   async function r2rConnectPanel(side) {
@@ -1516,20 +2076,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (id === '__local__') {
       const localResult = await window.terminal.sftpConnectPanel(side, { type: 'local' });
       if (!localResult || !localResult.ok) {
-        setStatus(`${side} 本地面板连接失败`, 'error');
+        setStatus(lr(`${side} 本地面板连接失败`, `${side} local panel connection failed`), 'error');
         return;
       }
       r2rState[side].connected = true;
       r2rState[side].mode = 'local';
       r2rState[side].cwd = localResult.cwd || '';
       await r2rListPanel(side, r2rState[side].cwd);
-      setStatus(`${side} 面板已连接 Local`, 'success');
+      setStatus(lr(`${side} 面板已连接 Local`, `${side} panel connected to Local`), 'success');
       return;
     }
 
     const saved = getConfigById(id);
     if (!saved) {
-      setStatus(`${side} 面板未选择配置`, 'error');
+      setStatus(lr(`${side} 面板未选择配置`, `${side} panel has no profile selected`), 'error');
       return;
     }
 
@@ -1545,7 +2105,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const finalCredential = credential || String((secret && secret.privateKey) || '').trim();
       const finalPassphrase = passphraseInput.value || String((secret && secret.passphrase) || '');
       if (!finalCredential && !keyPath) {
-        setStatus(`${side} 私钥认证需输入私钥内容/路径或保存凭据`, 'error');
+        setStatus(lr(`${side} 私钥认证需输入私钥内容/路径或保存凭据`, `${side} key auth requires private key content/path or saved credentials`), 'error');
         return;
       }
       if (finalCredential.includes('BEGIN')) {
@@ -1563,17 +2123,23 @@ document.addEventListener('DOMContentLoaded', async () => {
       config.password = credentialInput.value || (secret && secret.password) || '';
     }
 
-    setStatus(`${side} 面板连接中...`);
+    setStatus(lr(`${side} 面板连接中...`, `${side} panel connecting...`));
     const result = await window.terminal.sftpConnectPanel(side, config);
     if (!result || !result.ok) {
-      setStatus(`${side} 面板连接失败: ${result && result.error ? result.error : 'unknown'}`, 'error');
+      setStatus(lr(
+        `${side} 面板连接失败: ${result && result.error ? result.error : 'unknown'}`,
+        `${side} panel connection failed: ${result && result.error ? result.error : 'unknown'}`
+      ), 'error');
       return;
     }
     r2rState[side].connected = true;
     r2rState[side].cwd = result.cwd || '.';
     r2rState[side].mode = 'ssh';
     await r2rListPanel(side, r2rState[side].cwd);
-    setStatus(`${side} 面板已连接 ${saved.username}@${saved.host}`, 'success');
+    setStatus(lr(
+      `${side} 面板已连接 ${saved.username}@${saved.host}`,
+      `${side} panel connected ${saved.username}@${saved.host}`
+    ), 'success');
   }
 
   function parentPath(p) {
@@ -1587,7 +2153,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function r2rListPanel(side, targetPath) {
     const result = await window.terminal.sftpList(side, targetPath || r2rState[side].cwd || '.');
     if (!result || !result.ok) {
-      setStatus(`${side} 列表失败: ${result && result.error ? result.error : 'unknown'}`, 'error');
+      setStatus(lr(
+        `${side} 列表失败: ${result && result.error ? result.error : 'unknown'}`,
+        `${side} list failed: ${result && result.error ? result.error : 'unknown'}`
+      ), 'error');
       return;
     }
     r2rState[side].cwd = result.cwd || r2rState[side].cwd;
@@ -1667,15 +2236,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         const { fromPanel, toPanel, sourcePath } = request;
         const targetDir = r2rState[toPanel] && r2rState[toPanel].cwd ? r2rState[toPanel].cwd : '/';
         if (!sourcePath || !fromPanel || !toPanel) {
-          throw new Error('传输请求不完整');
+          throw new Error(lr('传输请求不完整', 'Incomplete transfer request'));
         }
-        setStatus(`传输中: ${sourcePath} -> ${targetDir}`);
-        const transferId = beginProgress(`传输中: ${String(sourcePath).split('/').pop() || sourcePath}`);
+        setStatus(lr(`传输中: ${sourcePath} -> ${targetDir}`, `Transferring: ${sourcePath} -> ${targetDir}`));
+        const transferId = beginProgress(lr(
+          `传输中: ${String(sourcePath).split('/').pop() || sourcePath}`,
+          `Transferring: ${String(sourcePath).split('/').pop() || sourcePath}`
+        ));
         result = await window.terminal.sftpTransferR2R(fromPanel, toPanel, sourcePath, targetDir, transferId, conflictStrategy);
         if (!result || !result.ok) {
           throw new Error(result && result.error ? result.error : 'unknown');
         }
-        setStatus(`传输成功: ${result.targetPath}`, 'success');
+        setStatus(lr(`传输成功: ${result.targetPath}`, `Transfer succeeded: ${result.targetPath}`), 'success');
         if (Number(result.skippedFiles || 0) > 0) {
           setTransferLastResult(`完成，跳过 ${result.skippedFiles} 个冲突文件`, 'warn');
         } else {
@@ -1686,14 +2258,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (kind === 'upload-local') {
         const { side, localPaths } = request;
         if (!side || !Array.isArray(localPaths) || !localPaths.length) {
-          throw new Error('上传恢复参数不完整');
+          throw new Error(lr('上传恢复参数不完整', 'Incomplete upload recovery parameters'));
         }
-        const transferId = beginProgress(`上传中: ${localPaths[0].split('/').pop() || 'file'}`);
+        const transferId = beginProgress(lr(
+          `上传中: ${localPaths[0].split('/').pop() || 'file'}`,
+          `Uploading: ${localPaths[0].split('/').pop() || 'file'}`
+        ));
         result = await window.terminal.sftpUploadLocal(side, r2rState[side].cwd, localPaths, transferId, conflictStrategy);
         if (!result || !result.ok) {
           throw new Error(result && result.error ? result.error : 'unknown');
         }
-        setStatus('上传完成', 'success');
+        setStatus(lr('上传完成', 'Upload completed'), 'success');
         if (Number(result.skippedFiles || 0) > 0) {
           setTransferLastResult(`上传完成，跳过 ${result.skippedFiles} 个冲突文件`, 'warn');
         } else {
@@ -1704,14 +2279,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (kind === 'download-local') {
         const { side, sourcePaths, localDir } = request;
         if (!side || !Array.isArray(sourcePaths) || !sourcePaths.length || !localDir) {
-          throw new Error('下载恢复参数不完整');
+          throw new Error(lr('下载恢复参数不完整', 'Incomplete download recovery parameters'));
         }
-        const transferId = beginProgress(`下载中: ${sourcePaths[0].split('/').pop() || 'file'}`);
+        const transferId = beginProgress(lr(
+          `下载中: ${sourcePaths[0].split('/').pop() || 'file'}`,
+          `Downloading: ${sourcePaths[0].split('/').pop() || 'file'}`
+        ));
         result = await window.terminal.sftpDownloadToLocal(side, sourcePaths, localDir, transferId, conflictStrategy);
         if (!result || !result.ok) {
           throw new Error(result && result.error ? result.error : 'unknown');
         }
-        setStatus(`下载完成: ${result.targetPath}`, 'success');
+        setStatus(lr(`下载完成: ${result.targetPath}`, `Download completed: ${result.targetPath}`), 'success');
         if (Number(result.skippedFiles || 0) > 0) {
           setTransferLastResult(`下载完成，跳过 ${result.skippedFiles} 个冲突文件`, 'warn');
         } else {
@@ -1719,15 +2297,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         hideTransferProgress(900);
       } else {
-        throw new Error(`不支持的传输类型: ${kind}`);
+        throw new Error(lr(`不支持的传输类型: ${kind}`, `Unsupported transfer type: ${kind}`));
       }
       clearPendingTransferRecovery();
       return { ok: true };
     } catch (err) {
       const message = String(err && err.message ? err.message : err || 'unknown');
-      setStatus(`传输失败: ${message}`, 'error');
-      setTransferLastResult(`失败: ${message}`, 'error');
-      els.transferProgressMeta.textContent = `失败: ${message}`;
+      setStatus(lr(`传输失败: ${message}`, `Transfer failed: ${message}`), 'error');
+      setTransferLastResult(lr(`失败: ${message}`, `Failed: ${message}`), 'error');
+      els.transferProgressMeta.textContent = lr(`失败: ${message}`, `Failed: ${message}`);
       els.transferProgressRetry.style.display = 'inline-block';
       lastFailedTransfer = request;
       persistPendingTransferRecovery(request);
@@ -1769,18 +2347,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     const result = await window.terminal.sftpMkdir(side, r2rState[side].cwd, name);
     if (!result || !result.ok) {
-      setStatus(`新建目录失败: ${result && result.error ? result.error : 'unknown'}`, 'error');
+      setStatus(lr(
+        `新建目录失败: ${result && result.error ? result.error : 'unknown'}`,
+        `Create directory failed: ${result && result.error ? result.error : 'unknown'}`
+      ), 'error');
       return;
     }
     if (input) input.value = '';
-    setStatus('目录创建成功', 'success');
+    setStatus(lr('目录创建成功', 'Directory created'), 'success');
     await r2rListPanel(side, r2rState[side].cwd);
   }
 
   async function r2rRename(side) {
     const current = r2rState[side];
     if (!current.selectedPath) {
-      setStatus('请先选择要重命名的文件/目录', 'error');
+      setStatus(lr('请先选择要重命名的文件/目录', 'Select a file/folder to rename first'), 'error');
       return;
     }
     const input = side === 'left' ? els.r2rLeftOpname : els.r2rRightOpname;
@@ -1788,26 +2369,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!nextName) return;
     const result = await window.terminal.sftpRename(side, current.selectedPath, nextName);
     if (!result || !result.ok) {
-      setStatus(`重命名失败: ${result && result.error ? result.error : 'unknown'}`, 'error');
+      setStatus(lr(
+        `重命名失败: ${result && result.error ? result.error : 'unknown'}`,
+        `Rename failed: ${result && result.error ? result.error : 'unknown'}`
+      ), 'error');
       return;
     }
     if (input) input.value = '';
-    setStatus('重命名成功', 'success');
+    setStatus(lr('重命名成功', 'Rename succeeded'), 'success');
     await r2rListPanel(side, r2rState[side].cwd);
   }
 
   async function r2rDelete(side) {
     const current = r2rState[side];
     if (!current.selectedPath) {
-      setStatus('请先选择要删除的文件/目录', 'error');
+      setStatus(lr('请先选择要删除的文件/目录', 'Select a file/folder to delete first'), 'error');
       return;
     }
     const result = await window.terminal.sftpDelete(side, current.selectedPath);
     if (!result || !result.ok) {
-      setStatus(`删除失败: ${result && result.error ? result.error : 'unknown'}`, 'error');
+      setStatus(lr(
+        `删除失败: ${result && result.error ? result.error : 'unknown'}`,
+        `Delete failed: ${result && result.error ? result.error : 'unknown'}`
+      ), 'error');
       return;
     }
-    setStatus('删除成功', 'success');
+    setStatus(lr('删除成功', 'Delete succeeded'), 'success');
     await r2rListPanel(side, r2rState[side].cwd);
   }
 
@@ -1825,7 +2412,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function r2rDownload(side) {
     const current = r2rState[side];
     if (!current.selectedPath) {
-      setStatus('请先选择要下载的文件/目录', 'error');
+      setStatus(lr('请先选择要下载的文件/目录', 'Select a file/folder to download first'), 'error');
       return;
     }
     const localDir = await window.terminal.pickLocalDirectory();
@@ -1861,7 +2448,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       if (!data || !data.fromPanel || !data.sourcePath) return;
       if (data.fromPanel === targetSide) {
-        setStatus('同一侧无需拖拽传输', 'info');
+        setStatus(lr('同一侧无需拖拽传输', 'No transfer needed within the same side'), 'info');
         return;
       }
       enqueueTransferRequest({
@@ -1885,27 +2472,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     if (!payload.host || !payload.username) {
-      setStatus('SSH连接需要主机和用户名', 'error');
+      setStatus(lr('SSH连接需要主机和用户名', 'SSH requires host and username'), 'error');
       return;
     }
 
     if (payload.authType === 'key') {
       payload.privateKey = els.inputKey.value;
       if (!payload.privateKey.trim()) {
-        setStatus('私钥认证需要私钥内容', 'error');
+        setStatus(lr('私钥认证需要私钥内容', 'Private key auth requires key content'), 'error');
         return;
       }
     } else {
       payload.password = els.inputPassword.value;
     }
 
-    setStatus(`连接SSH ${payload.username}@${payload.host}:${payload.port}...`);
+    setStatus(lr(
+      `连接SSH ${payload.username}@${payload.host}:${payload.port}...`,
+      `Connecting SSH ${payload.username}@${payload.host}:${payload.port}...`
+    ));
     term.write(`\r\n\x1b[33m[SSH] Connecting to ${payload.username}@${payload.host}:${payload.port}...\x1b[0m\r\n`);
 
     const result = await connectSshWithTrustFlow(payload);
     if (!result || !result.ok) {
       const error = result && result.error ? result.error : 'unknown error';
-      setStatus(`SSH连接失败: ${error}`, 'error');
+      setStatus(lr(`SSH连接失败: ${error}`, `SSH connection failed: ${error}`), 'error');
       term.write(`\r\n\x1b[31m[SSH] Connection failed: ${error}\x1b[0m\r\n`);
       return;
     }
@@ -1971,7 +2561,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderTabs();
 
     closeModal();
-    setStatus(`SSH已连接 ${payload.username}@${payload.host}:${payload.port}`, 'success');
+    setStatus(lr(
+      `SSH已连接 ${payload.username}@${payload.host}:${payload.port}`,
+      `SSH connected ${payload.username}@${payload.host}:${payload.port}`
+    ), 'success');
     term.focus();
   }
 
@@ -1979,7 +2572,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (reconnectStateActive && isCurrentSshTab()) {
       if (!reconnectInputWarned) {
         reconnectInputWarned = true;
-        term.write('\r\n\x1b[33m[SSH] 正在重连，输入已临时禁用...\x1b[0m\r\n');
+        term.write(currentLocale === 'en-US'
+          ? '\r\n\x1b[33m[SSH] Reconnecting, input is temporarily disabled...\x1b[0m\r\n'
+          : '\r\n\x1b[33m[SSH] 正在重连，输入已临时禁用...\x1b[0m\r\n');
       }
       return;
     }
@@ -1995,7 +2590,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   window.terminal.onStatus((payload) => {
     if (!payload) return;
-    setStatus(payload.message || '状态更新', payload.level || 'info');
+    setStatus(payload.message || lr('状态更新', 'Status updated'), payload.level || 'info');
   });
   window.terminal.onReconnectState((payload) => {
     if (!payload) return;
@@ -2011,17 +2606,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       const attempt = payload.attempt || 1;
       const maxAttempts = payload.maxAttempts || '-';
       const sec = Math.max(1, Math.round((payload.nextRetryInMs || 0) / 1000));
-      setStatus(`SSH重连中 ${attempt}/${maxAttempts}，${sec}s后重试`, 'info');
+      setStatus(lr(
+        `SSH重连中 ${attempt}/${maxAttempts}，${sec}s后重试`,
+        `SSH reconnecting ${attempt}/${maxAttempts}, retry in ${sec}s`
+      ), 'info');
       return;
     }
     if (payload.success) {
       showQuickReconnect(false);
       const elapsedSec = Math.max(0, Math.round((payload.elapsedMs || 0) / 1000));
-      setStatus(`SSH重连成功（耗时 ${elapsedSec}s）`, 'success');
+      setStatus(lr(`SSH重连成功（耗时 ${elapsedSec}s）`, `SSH reconnected in ${elapsedSec}s`), 'success');
       return;
     }
     if (payload.failed) {
-      setStatus('SSH自动重连失败，请手动重连', 'error');
+      setStatus(lr('SSH自动重连失败，请手动重连', 'SSH auto reconnect failed, please reconnect manually'), 'error');
       showQuickReconnect(isCurrentSshTab());
     }
   });
@@ -2041,17 +2639,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     const speedPerSec = (deltaBytes * 1000) / deltaTime;
     transferSpeedCtx = { bytes, ts: now };
 
-    showTransferProgress(`传输中: ${payload.fileName || 'file'}`);
+    showTransferProgress(lr(`传输中: ${payload.fileName || 'file'}`, `Transferring: ${payload.fileName || 'file'}`));
     els.transferProgressFill.style.width = `${Math.max(0, Math.min(100, percent))}%`;
     els.transferProgressMeta.textContent =
       `${percent}% · ${formatBytes(bytes)} / ${formatBytes(total)} · ${formatBytes(speedPerSec)}/s`;
 
     if (payload.status === 'done') {
       els.transferProgressFill.style.width = '100%';
-      els.transferProgressMeta.textContent = `100% · ${formatBytes(total)} / ${formatBytes(total)} · 完成`;
+      els.transferProgressMeta.textContent = lr(
+        `100% · ${formatBytes(total)} / ${formatBytes(total)} · 完成`,
+        `100% · ${formatBytes(total)} / ${formatBytes(total)} · Done`
+      );
       els.transferProgressRetry.style.display = 'none';
     } else if (payload.status === 'error') {
-      els.transferProgressMeta.textContent = `${percent}% · 传输失败`;
+      els.transferProgressMeta.textContent = lr(`${percent}% · 传输失败`, `${percent}% · Transfer failed`);
       els.transferProgressRetry.style.display = 'inline-block';
     }
   });
@@ -2082,7 +2683,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     reconnectStateActive = false;
     term.options.disableStdin = false;
     showQuickReconnect(false);
-    setStatus('SSH已断开，已切回本地', 'info');
+    setStatus(lr('SSH已断开，已切回本地', 'SSH disconnected, switched to local'), 'info');
     term.focus();
   });
 
@@ -2137,7 +2738,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     reconnectStateActive = false;
     term.options.disableStdin = false;
     showQuickReconnect(false);
-    setStatus('SSH已断开，已切回本地', 'info');
+    setStatus(lr('SSH已断开，已切回本地', 'SSH disconnected, switched to local'), 'info');
     term.focus();
   });
   els.workspaceActionSaveSession.addEventListener('click', saveWorkspaceSession);
@@ -2189,7 +2790,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   els.btnHistoryClear.addEventListener('click', async () => {
     await window.terminal.clearHistory();
     await renderHistoryList(els.historySearch.value);
-    setStatus('命令历史已清空', 'info');
+    setStatus(lr('命令历史已清空', 'Command history cleared'), 'info');
   });
   if (els.auditSearch) {
     els.auditSearch.addEventListener('input', () => {
@@ -2205,18 +2806,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     els.btnAuditClear.addEventListener('click', async () => {
       await window.terminal.clearAudit();
       await renderAuditList(els.auditSearch.value);
-      setStatus('审计日志已清空', 'warn');
+      setStatus(lr('审计日志已清空', 'Audit logs cleared'), 'warn');
     });
   }
   els.btnOpenSettings.addEventListener('click', () => {
     openSettingsModal();
   });
   els.btnSettingsClose.addEventListener('click', closeSettingsModal);
+  if (els.settingLanguage) {
+    els.settingLanguage.addEventListener('change', () => {
+      applyLocale(els.settingLanguage.value === 'en-US' ? 'en-US' : 'zh-CN');
+    });
+  }
   els.btnSettingsSave.addEventListener('click', async () => {
     const patch = {
       fontFamily: els.settingFontFamily.value.trim() || 'Monaco, Menlo, "Courier New", monospace',
       fontSize: Number(els.settingFontSize.value) || 14,
       theme: els.settingTheme.value === 'light' ? 'light' : 'dark',
+      language: els.settingLanguage && els.settingLanguage.value === 'en-US' ? 'en-US' : 'zh-CN',
       defaultShell: els.settingShell.value.trim(),
       sshAutoReconnect: els.settingSshAutoReconnect.value !== 'false',
       sshReconnectMaxAttempts: Math.max(1, Math.min(20, Number(els.settingSshRetryMax.value) || 6)),
@@ -2228,9 +2835,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (result && result.ok) {
       applySettingsToTerminal(result.settings);
       closeSettingsModal();
-      setStatus('设置已保存', 'success');
+      setStatus(t('settingsSaved'), 'success');
     } else {
-      setStatus('设置保存失败', 'error');
+      setStatus(t('settingsSaveFailed'), 'error');
     }
   });
   els.btnCloseR2R.addEventListener('click', () => {
@@ -2240,7 +2847,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (els.btnTransferRecover) {
     els.btnTransferRecover.addEventListener('click', async () => {
       if (!pendingTransferRecovery || !pendingTransferRecovery.request) {
-        setStatus('没有可恢复的中断传输', 'info');
+        setStatus(lr('没有可恢复的中断传输', 'No interrupted transfer to recover'), 'info');
         return;
       }
       setActiveNav('nav-transfer');
@@ -2250,7 +2857,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         setStatus(check.error, 'warn');
         return;
       }
-      setStatus('正在恢复中断传输...', 'info');
+      setStatus(lr('正在恢复中断传输...', 'Resuming interrupted transfer...'), 'info');
       enqueueTransferRequest({
         ...pendingTransferRecovery.request,
         _fromRecovery: true
@@ -2262,7 +2869,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       transferQueue = transferQueue.filter((item) => item.status !== 'pending');
       updateTransferQueueSummary();
       renderTransferFailedList();
-      setStatus('已清空待执行传输队列', 'info');
+      setStatus(lr('已清空待执行传输队列', 'Cleared pending transfer queue'), 'info');
     });
   }
   if (els.btnTransferRetryFailed) {
@@ -2280,7 +2887,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       updateTransferQueueSummary();
       renderTransferFailedList();
       if (retried > 0) {
-        setStatus(`已重新排队 ${retried} 个失败任务`, 'info');
+        setStatus(lr(`已重新排队 ${retried} 个失败任务`, `Re-queued ${retried} failed task(s)`), 'info');
         processTransferQueue();
       }
     });
@@ -2301,7 +2908,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!selectedFailedTransferId) return;
       const ok = retryFailedQueueItem(selectedFailedTransferId);
       if (ok) {
-        setStatus('已重试当前失败项', 'info');
+        setStatus(t('statusRetriedCurrentOne'), 'info');
       }
     });
   }
@@ -2336,19 +2943,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   els.r2rLeftFavAdd.addEventListener('click', () => {
     addFavoriteDir('left', r2rState.left.cwd);
-    setStatus('左侧目录已收藏', 'success');
+    setStatus(lr('左侧目录已收藏', 'Left directory added to favorites'), 'success');
   });
   els.r2rRightFavAdd.addEventListener('click', () => {
     addFavoriteDir('right', r2rState.right.cwd);
-    setStatus('右侧目录已收藏', 'success');
+    setStatus(lr('右侧目录已收藏', 'Right directory added to favorites'), 'success');
   });
   els.r2rLeftFavDel.addEventListener('click', () => {
     removeFavoriteDir('left', els.r2rLeftFavorite.value || r2rState.left.cwd);
-    setStatus('左侧收藏已移除', 'info');
+    setStatus(lr('左侧收藏已移除', 'Left favorite removed'), 'info');
   });
   els.r2rRightFavDel.addEventListener('click', () => {
     removeFavoriteDir('right', els.r2rRightFavorite.value || r2rState.right.cwd);
-    setStatus('右侧收藏已移除', 'info');
+    setStatus(lr('右侧收藏已移除', 'Right favorite removed'), 'info');
   });
 
   bindDropTarget(els.r2rLeftList, 'left');
@@ -2373,23 +2980,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   els.btnLoadSaved.addEventListener('click', async () => {
     const selected = getSelectedConfig();
     if (!selected) {
-      setStatus('请先选择一条SSH配置', 'error');
+      setStatus(lr('请先选择一条SSH配置', 'Please select an SSH profile first'), 'error');
       return;
     }
     await loadConnectionEditorFromConfig(selected);
-    setStatus(`已加载配置: ${selected.name || selected.host}`, 'info');
+    setStatus(lr(`已加载配置: ${selected.name || selected.host}`, `Profile loaded: ${selected.name || selected.host}`), 'info');
   });
 
   els.btnDeleteSaved.addEventListener('click', async () => {
     const selected = getSelectedConfig();
     if (!selected) {
-      setStatus('请先选择要删除的配置', 'error');
+      setStatus(lr('请先选择要删除的配置', 'Please select a profile to delete'), 'error');
       return;
     }
     await window.terminal.removeSSHConfig(selected.id);
     await refreshSavedConfigs();
     clearConnectionEditor();
-    setStatus('SSH配置已删除', 'info');
+    setStatus(lr('SSH配置已删除', 'SSH profile deleted'), 'info');
   });
   if (els.savedSelect) {
     els.savedSelect.addEventListener('change', async () => {
@@ -2427,7 +3034,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (els.btnConnNew) {
     els.btnConnNew.addEventListener('click', () => {
       clearConnectionEditor();
-      setStatus('已切换到新建配置', 'info');
+      setStatus(lr('已切换到新建配置', 'Switched to new profile editor'), 'info');
     });
   }
   if (els.btnConnSave) {
@@ -2443,12 +3050,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   els.btnQuickReconnect.addEventListener('click', async () => {
     const tab = getCurrentTab();
     if (!tab || tab.type !== 'ssh') {
-      setStatus('当前不是SSH标签，无法快速重连', 'error');
+      setStatus(lr('当前不是SSH标签，无法快速重连', 'Current tab is not SSH, quick reconnect unavailable'), 'error');
       showQuickReconnect(false);
       return;
     }
     if (!tab.lastConnectPayload) {
-      setStatus('缺少上次连接凭据，请重新填写SSH连接信息', 'error');
+      setStatus(lr('缺少上次连接凭据，请重新填写SSH连接信息', 'Missing previous credentials, please reconnect from SSH form'), 'error');
       showQuickReconnect(false);
       pendingTabForConnect = tab.id;
       openModal();
@@ -2457,14 +3064,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     showQuickReconnect(false);
     reconnectStateActive = false;
     term.options.disableStdin = false;
-    setStatus(`手动快速重连 ${tab.lastConnectPayload.username}@${tab.lastConnectPayload.host}...`, 'info');
+    setStatus(lr(
+      `手动快速重连 ${tab.lastConnectPayload.username}@${tab.lastConnectPayload.host}...`,
+      `Manually reconnecting ${tab.lastConnectPayload.username}@${tab.lastConnectPayload.host}...`
+    ), 'info');
     const result = await window.terminal.connectSSH(tab.lastConnectPayload);
     if (!result || !result.ok) {
-      setStatus(`快速重连失败: ${result && result.error ? result.error : 'unknown'}`, 'error');
+      setStatus(lr(
+        `快速重连失败: ${result && result.error ? result.error : 'unknown'}`,
+        `Quick reconnect failed: ${result && result.error ? result.error : 'unknown'}`
+      ), 'error');
       showQuickReconnect(true);
       return;
     }
-    setStatus('快速重连成功', 'success');
+    setStatus(lr('快速重连成功', 'Quick reconnect succeeded'), 'success');
   });
 
   window.addEventListener('resize', () => {
@@ -2499,11 +3112,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (pendingTransferRecovery && pendingTransferRecovery.request) {
     const req = pendingTransferRecovery.request || {};
     const taskLabel = req.kind === 'upload-local'
-      ? '上传'
+      ? lr('上传', 'upload')
       : req.kind === 'download-local'
-        ? '下载'
+        ? lr('下载', 'download')
         : 'R2R';
-    setStatus(`检测到上次中断${taskLabel}任务，可在文件传输页点击“恢复中断传输”继续`, 'warn');
+    setStatus(lr(
+      `检测到上次中断${taskLabel}任务，可在文件传输页点击“恢复中断传输”继续`,
+      `Detected an interrupted ${taskLabel} task. Go to Transfer and click "Resume Interrupted Transfer".`
+    ), 'warn');
   }
   loadR2RDirPrefs();
   bindR2RSplitter();
@@ -2531,8 +3147,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderTabs();
   await switchToTab(currentTabId);
   const hasSavedSession = !!localStorage.getItem(SESSION_KEY);
-  setStatus(hasSavedSession ? '就绪，可恢复上次会话' : '本地终端就绪，SSH功能已启用', 'success');
+  setStatus(hasSavedSession
+    ? lr('就绪，可恢复上次会话', 'Ready. You can restore the last session.')
+    : lr('本地终端就绪，SSH功能已启用', 'Local terminal ready, SSH features enabled'), 'success');
   term.writeln('\x1b[1;36mSmart-Term Electron\x1b[0m');
-  term.writeln('\x1b[32m支持多标签、会话保存/恢复、系统监控侧栏\x1b[0m');
+  term.writeln(currentLocale === 'en-US'
+    ? '\x1b[32mMulti-tab terminal, session save/restore, and monitor sidebar enabled\x1b[0m'
+    : '\x1b[32m支持多标签、会话保存/恢复、系统监控侧栏\x1b[0m');
   term.focus();
 });
