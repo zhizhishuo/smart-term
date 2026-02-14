@@ -1,0 +1,17 @@
+node_modules/
+dist/
+out/
+release/
+coverage/
+playwright-report/
+test-results/
+.DS_Store
+*.log
+
+# Local runtime/project artifacts
+ssh_configs.json
+history.json
+settings.json
+known_hosts
+audit.log
+pending_transfers.json

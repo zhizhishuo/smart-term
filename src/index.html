@@ -1,0 +1,1510 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
+    <title>Smart-Term - Electron Edition</title>
+    
+    <!-- xterm.js CSS -->
+    <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css">
+    
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: #1e1e1e;
+            overflow: hidden;
+            font-family: Monaco, Menlo, 'Courier New', monospace;
+            color: #d4d4d4;
+        }
+        #app {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            width: 100%;
+        }
+        #main-content {
+            display: flex;
+            flex: 1;
+            min-height: 0;
+            min-width: 0;
+        }
+        #app-nav {
+            width: 170px;
+            border-right: 1px solid #2d2d2d;
+            background: #181818;
+            padding: 10px 8px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .nav-item {
+            height: 34px;
+            border: 1px solid #323232;
+            background: #222;
+            color: #d4d4d4;
+            border-radius: 8px;
+            font-size: 12px;
+            text-align: left;
+            padding: 0 10px;
+            cursor: pointer;
+        }
+        .nav-item:hover {
+            background: #2d2d2d;
+        }
+        .nav-item.active {
+            border-color: #569cd6;
+            background: #1f2a35;
+            color: #ffffff;
+        }
+        #workspace {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-width: 0;
+            min-height: 0;
+            position: relative;
+        }
+        #workspace-view-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 10px 12px 8px 12px;
+            border-bottom: 1px solid #2d2d2d;
+            background: #1f1f1f;
+        }
+        #workspace-view-title {
+            font-size: 14px;
+            color: #f0f0f0;
+            font-weight: 600;
+        }
+        #workspace-view-subtitle {
+            font-size: 12px;
+            color: #9aa0a6;
+            margin-top: 2px;
+        }
+        #workspace-primary-action {
+            height: 30px;
+            border: 1px solid #3a3a3a;
+            background: #2d2d2d;
+            color: #d4d4d4;
+            border-radius: 6px;
+            padding: 0 10px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        #workspace-primary-action:hover {
+            background: #37373d;
+        }
+        #workspace-secondary-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-bottom: 1px solid #2d2d2d;
+            background: #202020;
+            overflow-x: auto;
+            white-space: nowrap;
+        }
+        #workspace-secondary-actions button, #workspace-secondary-actions select {
+            height: 28px;
+            border: 1px solid #3a3a3a;
+            background: #2d2d2d;
+            color: #d4d4d4;
+            border-radius: 6px;
+            padding: 0 10px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        #workspace-secondary-actions button:hover {
+            background: #37373d;
+        }
+        #workspace-secondary-actions button.hidden-action {
+            display: none;
+        }
+        #toolbar {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: nowrap;
+            padding: 10px;
+            border-bottom: 1px solid #2d2d2d;
+            background: #252526;
+        }
+        #toolbar-brand {
+            font-size: 13px;
+            color: #f0f0f0;
+            font-weight: 600;
+            letter-spacing: .2px;
+            white-space: nowrap;
+        }
+        #toolbar button, #toolbar select {
+            height: 30px;
+            border: 1px solid #3a3a3a;
+            background: #2d2d2d;
+            color: #d4d4d4;
+            border-radius: 6px;
+            padding: 0 10px;
+            font-size: 12px;
+        }
+        #toolbar button:hover {
+            background: #37373d;
+            cursor: pointer;
+        }
+        #status {
+            margin-left: 10px;
+            margin-right: auto;
+            font-size: 12px;
+            color: #9cdcfe;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: min(62vw, 920px);
+        }
+        #legacy-actions {
+            display: none;
+        }
+        #btn-quick-reconnect {
+            height: 28px;
+            border: 1px solid #3a3a3a;
+            background: #2d2d2d;
+            color: #d4d4d4;
+            border-radius: 6px;
+            padding: 0 10px;
+            font-size: 12px;
+            display: none;
+            cursor: pointer;
+        }
+        #btn-quick-reconnect.show {
+            display: inline-block;
+        }
+        #terminal-container {
+            flex: 1;
+            min-height: 0;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+        .docked-panel {
+            position: absolute !important;
+            inset: 0 !important;
+            z-index: 6;
+            display: none !important;
+        }
+        .docked-panel.show {
+            display: flex !important;
+        }
+        #r2r-modal.docked-panel {
+            align-items: stretch !important;
+            justify-content: stretch !important;
+            background: #1e1e1e !important;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+        #r2r-modal.docked-panel .r2r-card {
+            width: 100% !important;
+            max-width: none !important;
+            height: 100% !important;
+            max-height: none !important;
+            margin: 0 !important;
+        }
+        #history-modal.docked-panel,
+        #audit-modal.docked-panel,
+        #settings-modal.docked-panel {
+            align-items: stretch !important;
+            justify-content: stretch !important;
+            background: #1e1e1e !important;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        #history-modal.docked-panel .modal-card,
+        #audit-modal.docked-panel .modal-card,
+        #settings-modal.docked-panel .modal-card {
+            width: 100% !important;
+            max-width: none !important;
+            height: 100%;
+            overflow: auto;
+        }
+        #tabs-bar {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 10px;
+            border-bottom: 1px solid #2d2d2d;
+            background: #202020;
+            overflow-x: auto;
+        }
+        #tabs-list {
+            display: flex;
+            gap: 6px;
+            flex: 1;
+            min-width: 0;
+        }
+        .tab-item {
+            height: 28px;
+            border: 1px solid #3a3a3a;
+            background: #2a2a2a;
+            color: #cfcfcf;
+            border-radius: 6px;
+            padding: 0 10px;
+            font-size: 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+        .tab-item.active {
+            border-color: #569cd6;
+            background: #1f2a35;
+            color: #ffffff;
+        }
+        .tab-close {
+            color: #999;
+            font-weight: bold;
+        }
+        #sidebar {
+            width: 320px;
+            border-right: 1px solid #2d2d2d;
+            background: #1c1c1c;
+            padding: 10px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow: hidden;
+        }
+        .monitor-card {
+            border: 1px solid #343434;
+            border-radius: 8px;
+            padding: 8px;
+            background: #222;
+        }
+        .monitor-title {
+            font-size: 12px;
+            color: #9cdcfe;
+            margin-bottom: 6px;
+        }
+        .monitor-title-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+        .monitor-toggle-btn {
+            height: 22px;
+            border: 1px solid #3a3a3a;
+            background: #2d2d2d;
+            color: #d4d4d4;
+            border-radius: 6px;
+            padding: 0 8px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        .monitor-toggle-btn:hover {
+            background: #37373d;
+        }
+        .monitor-row {
+            font-size: 12px;
+            color: #d4d4d4;
+            margin: 2px 0;
+        }
+        .cpu-summary {
+            font-size: 12px;
+            color: #d4d4d4;
+            margin-bottom: 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .cpu-overview {
+            font-size: 12px;
+            color: #b8d7f5;
+            margin-bottom: 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .cpu-core-list {
+            max-height: 260px;
+            overflow: auto;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 6px;
+            background: #1b1b1b;
+        }
+        .cpu-core-row {
+            display: grid;
+            grid-template-columns: 62px 1fr 48px;
+            gap: 8px;
+            align-items: center;
+            margin: 4px 0;
+        }
+        .cpu-core-label {
+            font-size: 11px;
+            color: #b5b5b5;
+        }
+        .cpu-core-pct {
+            font-size: 11px;
+            color: #9cdcfe;
+            text-align: right;
+        }
+        .cpu-core-bar {
+            height: 7px;
+            border: 1px solid #333;
+            border-radius: 99px;
+            overflow: hidden;
+            background: #171717;
+        }
+        .cpu-core-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #4ec9b0, #9cdcfe);
+        }
+        .hidden {
+            display: none !important;
+        }
+        .bar {
+            height: 8px;
+            border: 1px solid #333;
+            border-radius: 99px;
+            overflow: hidden;
+            background: #1a1a1a;
+            margin-top: 6px;
+        }
+        .bar-fill {
+            height: 100%;
+            width: 0%;
+            transition: width 150ms linear;
+            background: linear-gradient(90deg, #4ec9b0, #9cdcfe);
+        }
+        @media (max-width: 1200px) {
+            #sidebar {
+                width: 280px;
+            }
+            #app-nav {
+                width: 150px;
+            }
+        }
+        #terminal {
+            width: 100%;
+            height: 100%;
+        }
+        #ssh-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.55);
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        #ssh-modal.show {
+            display: flex;
+        }
+        .modal-card {
+            width: 460px;
+            background: #252526;
+            border: 1px solid #3a3a3a;
+            border-radius: 10px;
+            padding: 16px;
+        }
+        .panel-shell {
+            width: 100%;
+            max-width: none;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .panel-title {
+            margin: 0;
+            font-size: 16px;
+            color: #f0f0f0;
+        }
+        .panel-subtitle {
+            margin: 4px 0 0 0;
+            font-size: 12px;
+            color: #9aa0a6;
+        }
+        .panel-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .panel-header-actions button {
+            height: 28px;
+            border: 1px solid #3a3a3a;
+            background: #2d2d2d;
+            color: #d4d4d4;
+            border-radius: 6px;
+            padding: 0 10px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .panel-header-actions button:hover {
+            background: #37373d;
+        }
+        .modal-card h3 {
+            margin: 0 0 14px 0;
+            font-size: 16px;
+        }
+        .form-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .form-row > div {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .form-row label {
+            font-size: 12px;
+            color: #b6b6b6;
+        }
+        .form-row input, .form-row select {
+            height: 30px;
+            border-radius: 6px;
+            border: 1px solid #3a3a3a;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 0 8px;
+        }
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        .hidden {
+            display: none !important;
+        }
+        #r2r-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        #r2r-modal.show {
+            display: flex;
+        }
+        .r2r-card {
+            width: min(96vw, 1200px);
+            max-width: 1200px;
+            height: min(84vh, 820px);
+            background: #252526;
+            border: 1px solid #3a3a3a;
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            padding: 12px;
+            gap: 10px;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+        .r2r-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .r2r-queue-line {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 6px;
+            font-size: 12px;
+            color: #b8d7f5;
+        }
+        .r2r-queue-line button {
+            height: 24px;
+            border: 1px solid #3a3a3a;
+            background: #242424;
+            color: #d4d4d4;
+            border-radius: 6px;
+            font-size: 11px;
+            padding: 0 8px;
+            cursor: pointer;
+        }
+        .r2r-queue-line button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .r2r-queue-line select {
+            height: 24px;
+            border: 1px solid #3a3a3a;
+            background: #1f1f1f;
+            color: #d4d4d4;
+            border-radius: 6px;
+            font-size: 11px;
+            padding: 0 8px;
+        }
+        #transfer-last-result {
+            color: #9aa0a6;
+            max-width: 360px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #transfer-failed-list {
+            margin-top: 6px;
+            border: 1px solid #3a3a3a;
+            border-radius: 6px;
+            background: #1b1b1b;
+            padding: 6px;
+            max-height: 120px;
+            overflow: auto;
+        }
+        .transfer-failed-item {
+            font-size: 11px;
+            color: #d4d4d4;
+            padding: 4px 0;
+            border-bottom: 1px solid #2f2f2f;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .transfer-failed-item:last-child {
+            border-bottom: none;
+        }
+        .transfer-failed-item.is-active {
+            color: #9cdcfe;
+        }
+        .transfer-failed-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .transfer-failed-label {
+            flex: 1;
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            cursor: pointer;
+        }
+        .transfer-failed-retry {
+            height: 22px;
+            border: 1px solid #3a3a3a;
+            background: #242424;
+            color: #d4d4d4;
+            border-radius: 6px;
+            font-size: 11px;
+            padding: 0 8px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        #transfer-failed-detail {
+            margin-top: 6px;
+            border: 1px solid #3a3a3a;
+            border-radius: 6px;
+            background: #171717;
+            padding: 8px;
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px;
+            align-items: center;
+        }
+        #transfer-failed-detail-text {
+            font-size: 11px;
+            color: #c9d1d9;
+            white-space: pre-wrap;
+            word-break: break-all;
+            line-height: 1.5;
+        }
+        #btn-transfer-retry-selected {
+            height: 24px;
+            border: 1px solid #3a3a3a;
+            background: #242424;
+            color: #d4d4d4;
+            border-radius: 6px;
+            font-size: 11px;
+            padding: 0 8px;
+            cursor: pointer;
+        }
+        .r2r-panels {
+            display: flex;
+            gap: 0;
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+        }
+        .r2r-panel {
+            flex: 1 1 0;
+            border: 1px solid #3a3a3a;
+            border-radius: 8px;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            min-width: 0;
+            overflow: hidden;
+        }
+        .r2r-splitter {
+            width: 10px;
+            min-width: 10px;
+            cursor: col-resize;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            touch-action: none;
+        }
+        .r2r-splitter::before {
+            content: '';
+            width: 2px;
+            height: 56px;
+            border-radius: 2px;
+            background: #3a3a3a;
+        }
+        .r2r-splitter:hover::before,
+        .r2r-splitter.is-dragging::before {
+            background: #9cdcfe;
+        }
+        .r2r-toolbar {
+            display: grid;
+            grid-template-columns: minmax(130px, 1.1fr) minmax(130px, 1fr) minmax(130px, 1fr) auto auto auto;
+            gap: 6px;
+            margin-bottom: 8px;
+            align-items: center;
+        }
+        .r2r-toolbar input, .r2r-toolbar select, .r2r-toolbar button {
+            height: 28px;
+            border: 1px solid #3a3a3a;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            border-radius: 6px;
+            font-size: 12px;
+            padding: 0 8px;
+            min-width: 0;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .r2r-toolbar button {
+            width: auto;
+            white-space: nowrap;
+            padding: 0 10px;
+        }
+        .r2r-path {
+            font-size: 12px;
+            color: #9cdcfe;
+            margin-bottom: 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .r2r-quicknav {
+            display: grid;
+            grid-template-columns: 1fr 1fr auto auto;
+            gap: 6px;
+            margin-bottom: 6px;
+        }
+        .r2r-quicknav select, .r2r-quicknav button {
+            height: 24px;
+            border: 1px solid #3a3a3a;
+            background: #1f1f1f;
+            color: #d4d4d4;
+            border-radius: 6px;
+            font-size: 11px;
+            padding: 0 8px;
+            min-width: 0;
+        }
+        .r2r-quicknav button {
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .r2r-actions {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 6px;
+            flex-wrap: wrap;
+        }
+        .r2r-opinput {
+            display: grid;
+            grid-template-columns: 1fr auto auto auto;
+            gap: 6px;
+            margin-bottom: 6px;
+        }
+        .r2r-opinput input, .r2r-opinput button {
+            height: 24px;
+            border: 1px solid #3a3a3a;
+            background: #1f1f1f;
+            color: #d4d4d4;
+            border-radius: 6px;
+            font-size: 11px;
+            padding: 0 8px;
+            min-width: 0;
+        }
+        .r2r-opinput button {
+            white-space: nowrap;
+            cursor: pointer;
+        }
+        .r2r-actions button {
+            height: 24px;
+            border: 1px solid #3a3a3a;
+            background: #242424;
+            color: #d4d4d4;
+            border-radius: 6px;
+            font-size: 11px;
+            padding: 0 8px;
+            cursor: pointer;
+        }
+        .r2r-list {
+            flex: 1;
+            min-height: 0;
+            overflow: auto;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 4px;
+            background: #1b1b1b;
+            min-width: 0;
+        }
+        .r2r-item {
+            padding: 4px 6px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            font-size: 12px;
+        }
+        .r2r-item:hover {
+            background: #2a2d2e;
+        }
+        .r2r-item.selected {
+            background: #24405d;
+            outline: 1px solid #4fc1ff;
+        }
+        .r2r-item-dir {
+            color: #4fc1ff;
+            cursor: pointer;
+        }
+        .r2r-item-file {
+            cursor: grab;
+        }
+        .r2r-drop-target {
+            outline: 1px dashed #4ec9b0;
+            background: #203030;
+        }
+        #transfer-progress {
+            position: fixed;
+            right: 16px;
+            bottom: 16px;
+            width: 360px;
+            background: #252526;
+            border: 1px solid #3a3a3a;
+            border-radius: 10px;
+            padding: 12px;
+            display: none;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+            z-index: 40;
+        }
+        #transfer-progress.show {
+            display: block;
+        }
+        #transfer-progress-title {
+            font-size: 13px;
+            color: #dcdcaa;
+            margin-bottom: 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #transfer-progress-meta {
+            font-size: 12px;
+            color: #9cdcfe;
+            margin-bottom: 8px;
+        }
+        #transfer-progress-track {
+            width: 100%;
+            height: 8px;
+            border-radius: 999px;
+            background: #1b1b1b;
+            overflow: hidden;
+            border: 1px solid #333;
+        }
+        .transfer-progress-footer {
+            margin-top: 8px;
+            display: flex;
+            justify-content: flex-end;
+        }
+        #transfer-progress-retry {
+            display: none;
+            height: 28px;
+            border: 1px solid #3a3a3a;
+            background: #2d2d2d;
+            color: #d4d4d4;
+            border-radius: 6px;
+            padding: 0 10px;
+            cursor: pointer;
+        }
+        #transfer-progress-retry:hover {
+            background: #37373d;
+        }
+        #history-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .55);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #settings-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .55);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #audit-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .55);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #history-card {
+            width: 700px;
+            max-width: 92vw;
+        }
+        #settings-card {
+            width: 560px;
+            max-width: 92vw;
+        }
+        #history-list {
+            flex: 1;
+            min-height: 0;
+            overflow: auto;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 6px;
+            background: #1b1b1b;
+        }
+        #audit-list {
+            flex: 1;
+            min-height: 0;
+            overflow: auto;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 6px;
+            background: #1b1b1b;
+        }
+        .audit-item {
+            padding: 6px;
+            border-bottom: 1px solid #2f2f2f;
+        }
+        .audit-main {
+            font-size: 12px;
+            color: #d4d4d4;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .audit-meta {
+            font-size: 11px;
+            color: #8a8a8a;
+            margin-top: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #connections-panel.docked-panel {
+            align-items: stretch !important;
+            justify-content: stretch !important;
+            background: #1e1e1e !important;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        #connections-panel .modal-card {
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+        }
+        .connections-grid {
+            display: grid;
+            grid-template-columns: minmax(280px, 360px) minmax(400px, 1fr);
+            gap: 12px;
+            flex: 1;
+            min-height: 0;
+        }
+        .connections-list-card,
+        .connections-edit-card {
+            border: 1px solid #3a3a3a;
+            border-radius: 8px;
+            background: #202020;
+            padding: 10px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        .connections-section-title {
+            font-size: 12px;
+            color: #9cdcfe;
+            margin-bottom: 8px;
+        }
+        .connections-filter-row {
+            display: grid;
+            grid-template-columns: 1fr 140px;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .connections-filter-row input,
+        .connections-filter-row select {
+            height: 28px;
+            border: 1px solid #3a3a3a;
+            border-radius: 6px;
+            background: #1b1b1b;
+            color: #d4d4d4;
+            font-size: 12px;
+            padding: 0 8px;
+            box-sizing: border-box;
+        }
+        #saved-ssh-select {
+            width: 100%;
+            min-height: 220px;
+            border: 1px solid #3a3a3a;
+            border-radius: 6px;
+            background: #1b1b1b;
+            color: #d4d4d4;
+            padding: 8px;
+            box-sizing: border-box;
+            font-size: 12px;
+            flex: 1;
+        }
+        .connections-list-actions {
+            margin-top: 8px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .connections-list-actions button {
+            height: 28px;
+            border: 1px solid #3a3a3a;
+            background: #2d2d2d;
+            color: #d4d4d4;
+            border-radius: 6px;
+            padding: 0 10px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .connections-list-actions button:hover {
+            background: #37373d;
+        }
+        @media (max-width: 1160px) {
+            .connections-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        #transfer-progress-fill {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #4ec9b0, #9cdcfe);
+            transition: width 120ms linear;
+        }
+        @media (max-width: 1280px) {
+            .r2r-toolbar {
+                grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr) auto auto auto;
+            }
+        }
+        @media (max-width: 1080px) {
+            .r2r-panels {
+                flex-direction: column;
+            }
+            .r2r-splitter {
+                display: none;
+            }
+            .r2r-toolbar {
+                grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr) auto auto auto;
+            }
+        }
+        @media (max-width: 760px) {
+            .r2r-toolbar {
+                grid-template-columns: 1fr 1fr;
+            }
+            .r2r-toolbar button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div id="toolbar">
+            <div id="toolbar-brand">Smart-Term</div>
+            <div id="status">初始化中...</div>
+            <button id="btn-quick-reconnect">快速重连</button>
+            <div id="legacy-actions">
+                <button id="btn-local">新建本地标签</button>
+                <button id="btn-open-ssh">新建SSH标签</button>
+                <button id="btn-disconnect-ssh">断开SSH</button>
+                <button id="btn-open-r2r">R2R拖拽</button>
+                <button id="btn-open-history">命令历史</button>
+                <button id="btn-open-settings">设置</button>
+                <button id="btn-save-session">保存会话</button>
+                <button id="btn-load-session">恢复会话</button>
+            </div>
+        </div>
+        <div id="main-content">
+            <aside id="app-nav">
+                <button class="nav-item active" id="nav-terminal">终端</button>
+                <button class="nav-item" id="nav-connections">连接</button>
+                <button class="nav-item" id="nav-transfer">文件传输</button>
+                <button class="nav-item" id="nav-history">命令历史</button>
+                <button class="nav-item" id="nav-audit">审计日志</button>
+                <button class="nav-item" id="nav-settings">设置</button>
+                <button class="nav-item" id="nav-monitor">监控: 开</button>
+            </aside>
+            <aside id="sidebar">
+                <div class="monitor-card">
+                    <div class="monitor-title-row">
+                        <div class="monitor-title">CPU</div>
+                        <button class="monitor-toggle-btn" id="cpu-mode-toggle">切换到总览</button>
+                    </div>
+                    <div class="cpu-summary" id="cpu-summary">-</div>
+                    <div class="cpu-overview hidden" id="cpu-overview-line">-</div>
+                    <div class="cpu-core-list" id="cpu-core-list"></div>
+                </div>
+                <div class="monitor-card">
+                    <div class="monitor-title">内存</div>
+                    <div class="monitor-row" id="mem-line">-</div>
+                    <div class="monitor-row" id="mem-line2">-</div>
+                    <div class="bar"><div class="bar-fill" id="mem-bar"></div></div>
+                </div>
+                <div class="monitor-card">
+                    <div class="monitor-title">磁盘</div>
+                    <div class="monitor-row" id="disk-line">-</div>
+                    <div class="monitor-row" id="disk-line2">-</div>
+                    <div class="bar"><div class="bar-fill" id="disk-bar"></div></div>
+                </div>
+            </aside>
+            <div id="workspace">
+                <div id="workspace-view-header">
+                    <div>
+                        <div id="workspace-view-title">终端</div>
+                        <div id="workspace-view-subtitle">多标签终端，支持本地与SSH会话</div>
+                    </div>
+                    <button id="workspace-primary-action">新建本地标签</button>
+                </div>
+                <div id="workspace-secondary-actions">
+                    <button id="workspace-action-open-ssh" data-views="terminal,transfer,history,settings">新建SSH连接</button>
+                    <button id="workspace-action-open-connections" data-views="terminal,transfer,history,settings">SSH配置</button>
+                    <button id="workspace-action-open-transfer" data-views="terminal,history,settings">打开文件传输</button>
+                    <button id="workspace-action-open-history" data-views="terminal,transfer,settings">命令历史</button>
+                    <button id="workspace-action-open-audit" data-views="terminal,transfer,history,settings">审计日志</button>
+                    <button id="workspace-action-open-settings" data-views="terminal,transfer,history">设置</button>
+                    <button id="workspace-action-disconnect" data-views="terminal,transfer,history,settings">断开SSH</button>
+                    <button id="workspace-action-save-session" data-views="terminal">保存会话</button>
+                    <button id="workspace-action-load-session" data-views="terminal">恢复会话</button>
+                </div>
+                <div id="tabs-bar">
+                    <div id="tabs-list"></div>
+                </div>
+                <div id="terminal-container">
+                    <div id="terminal"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="connections-panel" class="hidden">
+        <div class="modal-card panel-shell">
+            <div class="panel-header">
+                <div>
+                    <h3 class="panel-title">SSH 连接管理</h3>
+                    <p class="panel-subtitle">查看全部配置，支持编辑、删除、快速连接</p>
+                </div>
+            </div>
+            <div class="connections-grid">
+                <div class="connections-list-card">
+                    <div class="connections-section-title">已保存 SSH 列表</div>
+                    <div class="connections-filter-row">
+                        <input id="conn-search" type="text" placeholder="搜索 名称/主机/用户名">
+                        <select id="conn-sort">
+                            <option value="name-asc">名称 A-Z</option>
+                            <option value="name-desc">名称 Z-A</option>
+                            <option value="host-asc">主机 A-Z</option>
+                            <option value="host-desc">主机 Z-A</option>
+                        </select>
+                    </div>
+                    <select id="saved-ssh-select" size="16"></select>
+                    <div class="connections-list-actions">
+                        <button id="btn-load-saved">加载到右侧编辑</button>
+                        <button id="btn-delete-saved">删除当前配置</button>
+                    </div>
+                </div>
+                <div class="connections-edit-card">
+                    <div class="connections-section-title">配置编辑</div>
+                    <div class="form-row">
+                        <div>
+                            <label for="conn-name">连接名称</label>
+                            <input id="conn-name" type="text" placeholder="例如: prod-server">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div>
+                            <label for="conn-host">主机</label>
+                            <input id="conn-host" type="text" placeholder="192.168.1.100">
+                        </div>
+                        <div>
+                            <label for="conn-port">端口</label>
+                            <input id="conn-port" type="number" value="22">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div>
+                            <label for="conn-username">用户名</label>
+                            <input id="conn-username" type="text" placeholder="root">
+                        </div>
+                        <div>
+                            <label for="conn-auth-type">认证方式</label>
+                            <select id="conn-auth-type">
+                                <option value="password">密码</option>
+                                <option value="key">私钥</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div>
+                            <label for="conn-jump-config">跳板机配置(可选)</label>
+                            <select id="conn-jump-config">
+                                <option value="">无</option>
+                            </select>
+                        </div>
+                        <div></div>
+                    </div>
+                    <div class="form-row" id="conn-password-row">
+                        <div>
+                            <label for="conn-password">密码</label>
+                            <input id="conn-password" type="password" placeholder="密码（保存后进入系统安全存储）">
+                        </div>
+                    </div>
+                    <div class="form-row hidden" id="conn-key-row">
+                        <div>
+                            <label for="conn-key">私钥内容或私钥文件路径</label>
+                            <input id="conn-key" type="text" placeholder="-----BEGIN... 或 ~/.ssh/id_rsa">
+                        </div>
+                    </div>
+                    <div class="form-row hidden" id="conn-passphrase-row">
+                        <div>
+                            <label for="conn-passphrase">私钥口令(可选)</label>
+                            <input id="conn-passphrase" type="password" placeholder="passphrase">
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button id="btn-conn-new">新建空白</button>
+                        <button id="btn-conn-connect">连接此配置</button>
+                        <button id="btn-conn-save">保存/更新</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="r2r-modal">
+        <div class="r2r-card">
+            <div class="r2r-header">
+                <div>
+                    <h3 class="panel-title">双面板 SFTP</h3>
+                    <p class="panel-subtitle">支持本地/远程双向拖拽，含目录递归与进度反馈</p>
+                    <div class="r2r-queue-line">
+                        <span id="transfer-queue-summary">队列: 0 (运行中: 0, 失败: 0)</span>
+                        <span id="transfer-last-result">最近结果: -</span>
+                        <label for="transfer-conflict-strategy">冲突策略</label>
+                        <select id="transfer-conflict-strategy">
+                            <option value="overwrite">覆盖</option>
+                            <option value="skip">跳过</option>
+                            <option value="rename">重命名</option>
+                        </select>
+                        <button id="btn-transfer-queue-clear" disabled>清空待队列</button>
+                        <button id="btn-transfer-retry-failed" disabled>重试失败</button>
+                        <button id="btn-transfer-show-failed" disabled>查看失败项</button>
+                    </div>
+                    <div id="transfer-failed-list" class="hidden"></div>
+                    <div id="transfer-failed-detail" class="hidden">
+                        <span id="transfer-failed-detail-text">请选择失败项查看详情</span>
+                        <button id="btn-transfer-retry-selected" disabled>重试此项</button>
+                    </div>
+                </div>
+                <div class="panel-header-actions">
+                    <button id="btn-transfer-recover">恢复中断传输</button>
+                    <button id="btn-close-r2r">关闭</button>
+                </div>
+            </div>
+            <div class="r2r-panels">
+                <div class="r2r-panel" id="panel-left">
+                    <div class="r2r-toolbar">
+                        <select id="r2r-left-config"></select>
+                        <input id="r2r-left-password" type="text" placeholder="密码 / 私钥内容或路径">
+                        <input id="r2r-left-passphrase" type="password" placeholder="私钥口令(可选)">
+                        <button id="r2r-left-connect">连接</button>
+                        <button id="r2r-left-up">上级</button>
+                        <button id="r2r-left-refresh">刷新</button>
+                    </div>
+                    <div class="r2r-path" id="r2r-left-path">未连接</div>
+                    <div class="r2r-quicknav">
+                        <select id="r2r-left-recent"></select>
+                        <select id="r2r-left-favorite"></select>
+                        <button id="r2r-left-fav-add">收藏</button>
+                        <button id="r2r-left-fav-del">取消收藏</button>
+                    </div>
+                    <div class="r2r-opinput">
+                        <input id="r2r-left-opname" type="text" placeholder="目录名/重命名新名称">
+                        <button id="r2r-left-mkdir">新建目录</button>
+                        <button id="r2r-left-rename">重命名</button>
+                        <button id="r2r-left-delete">删除选中</button>
+                    </div>
+                    <div class="r2r-actions">
+                        <button id="r2r-left-upload">上传</button>
+                        <button id="r2r-left-download">下载</button>
+                    </div>
+                    <div class="r2r-list" id="r2r-left-list"></div>
+                </div>
+                <div class="r2r-splitter" id="r2r-splitter" title="拖拽调整左右面板宽度"></div>
+                <div class="r2r-panel" id="panel-right">
+                    <div class="r2r-toolbar">
+                        <select id="r2r-right-config"></select>
+                        <input id="r2r-right-password" type="text" placeholder="密码 / 私钥内容或路径">
+                        <input id="r2r-right-passphrase" type="password" placeholder="私钥口令(可选)">
+                        <button id="r2r-right-connect">连接</button>
+                        <button id="r2r-right-up">上级</button>
+                        <button id="r2r-right-refresh">刷新</button>
+                    </div>
+                    <div class="r2r-path" id="r2r-right-path">未连接</div>
+                    <div class="r2r-quicknav">
+                        <select id="r2r-right-recent"></select>
+                        <select id="r2r-right-favorite"></select>
+                        <button id="r2r-right-fav-add">收藏</button>
+                        <button id="r2r-right-fav-del">取消收藏</button>
+                    </div>
+                    <div class="r2r-opinput">
+                        <input id="r2r-right-opname" type="text" placeholder="目录名/重命名新名称">
+                        <button id="r2r-right-mkdir">新建目录</button>
+                        <button id="r2r-right-rename">重命名</button>
+                        <button id="r2r-right-delete">删除选中</button>
+                    </div>
+                    <div class="r2r-actions">
+                        <button id="r2r-right-upload">上传</button>
+                        <button id="r2r-right-download">下载</button>
+                    </div>
+                    <div class="r2r-list" id="r2r-right-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="transfer-progress">
+        <div id="transfer-progress-title">准备传输...</div>
+        <div id="transfer-progress-meta">0% · 0 B / 0 B</div>
+        <div id="transfer-progress-track">
+            <div id="transfer-progress-fill"></div>
+        </div>
+        <div class="transfer-progress-footer">
+            <button id="transfer-progress-retry">重试</button>
+        </div>
+    </div>
+
+    <div id="history-modal" class="hidden">
+        <div class="modal-card panel-shell" id="history-card">
+            <div class="panel-header">
+                <div>
+                    <h3 class="panel-title">命令历史</h3>
+                    <p class="panel-subtitle">双击可回放命令，支持关键字过滤</p>
+                </div>
+                <div class="panel-header-actions">
+                    <button id="btn-history-close">关闭</button>
+                </div>
+            </div>
+            <div class="form-row">
+                <div>
+                    <label for="history-search">搜索</label>
+                    <input id="history-search" type="text" placeholder="输入关键字过滤历史命令">
+                </div>
+            </div>
+            <div id="history-list"></div>
+            <div class="modal-actions">
+                <button id="btn-history-clear">清空历史</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="audit-modal" class="hidden">
+        <div class="modal-card panel-shell" id="audit-card">
+            <div class="panel-header">
+                <div>
+                    <h3 class="panel-title">审计日志</h3>
+                    <p class="panel-subtitle">记录连接、传输、删除和失败原因等关键操作</p>
+                </div>
+                <div class="panel-header-actions">
+                    <button id="btn-audit-refresh">刷新</button>
+                </div>
+            </div>
+            <div class="form-row">
+                <div>
+                    <label for="audit-search">搜索</label>
+                    <input id="audit-search" type="text" placeholder="输入关键字过滤审计事件">
+                </div>
+            </div>
+            <div id="audit-list"></div>
+            <div class="modal-actions">
+                <button id="btn-audit-clear">清空审计日志</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="settings-modal" class="hidden">
+        <div class="modal-card panel-shell" id="settings-card">
+            <div class="panel-header">
+                <div>
+                    <h3 class="panel-title">设置</h3>
+                    <p class="panel-subtitle">实时调整终端显示与连接策略</p>
+                </div>
+                <div class="panel-header-actions">
+                    <button id="btn-settings-close">取消</button>
+                </div>
+            </div>
+            <div class="form-row">
+                <div>
+                    <label for="setting-font-family">字体</label>
+                    <input id="setting-font-family" type="text" placeholder="Monaco, Menlo, ...">
+                </div>
+                <div>
+                    <label for="setting-font-size">字号</label>
+                    <input id="setting-font-size" type="number" min="10" max="28" value="14">
+                </div>
+            </div>
+            <div class="form-row">
+                <div>
+                    <label for="setting-theme">主题</label>
+                    <select id="setting-theme">
+                        <option value="dark">Dark</option>
+                        <option value="light">Light</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="setting-shell">默认Shell（下次新本地标签生效）</label>
+                    <input id="setting-shell" type="text" placeholder="/bin/zsh">
+                </div>
+            </div>
+            <div class="form-row">
+                <div>
+                    <label for="setting-ssh-auto-reconnect">SSH自动重连</label>
+                    <select id="setting-ssh-auto-reconnect">
+                        <option value="true">开启</option>
+                        <option value="false">关闭</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="setting-ssh-retry-max">最大重试次数</label>
+                    <input id="setting-ssh-retry-max" type="number" min="1" max="20" value="6">
+                </div>
+            </div>
+            <div class="form-row">
+                <div>
+                    <label for="setting-ssh-retry-delay">重连基础间隔(ms)</label>
+                    <input id="setting-ssh-retry-delay" type="number" min="500" max="60000" value="1500">
+                </div>
+                <div>
+                    <label for="setting-ssh-keepalive">Keepalive间隔(ms)</label>
+                    <input id="setting-ssh-keepalive" type="number" min="3000" max="60000" value="15000">
+                </div>
+            </div>
+            <div class="form-row">
+                <div>
+                    <label for="setting-ssh-keepalive-max">Keepalive最大丢包次数</label>
+                    <input id="setting-ssh-keepalive-max" type="number" min="1" max="10" value="3">
+                </div>
+                <div></div>
+            </div>
+            <div class="modal-actions">
+                <button id="btn-settings-save">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="ssh-modal">
+        <div class="modal-card">
+            <h3>SSH连接</h3>
+            <div class="form-row">
+                <div>
+                    <label for="ssh-name">连接名称</label>
+                    <input id="ssh-name" type="text" placeholder="例如: prod-server">
+                </div>
+            </div>
+            <div class="form-row">
+                <div>
+                    <label for="ssh-host">主机</label>
+                    <input id="ssh-host" type="text" placeholder="192.168.1.100">
+                </div>
+                <div>
+                    <label for="ssh-port">端口</label>
+                    <input id="ssh-port" type="number" value="22">
+                </div>
+            </div>
+            <div class="form-row">
+                <div>
+                    <label for="ssh-username">用户名</label>
+                    <input id="ssh-username" type="text" placeholder="root">
+                </div>
+                <div>
+                    <label for="ssh-auth-type">认证方式</label>
+                    <select id="ssh-auth-type">
+                        <option value="password">密码</option>
+                        <option value="key">私钥</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div>
+                    <label for="ssh-jump-config">跳板机配置(可选)</label>
+                    <select id="ssh-jump-config">
+                        <option value="">无</option>
+                    </select>
+                </div>
+                <div></div>
+            </div>
+            <div class="form-row" id="password-row">
+                <div>
+                    <label for="ssh-password">密码</label>
+                    <input id="ssh-password" type="password" placeholder="密码不会被保存">
+                </div>
+            </div>
+            <div class="form-row hidden" id="key-row">
+                <div>
+                    <label for="ssh-key">私钥内容</label>
+                    <input id="ssh-key" type="text" placeholder="粘贴私钥内容">
+                </div>
+            </div>
+            <div class="form-row">
+                <div>
+                    <label><input id="ssh-save-config" type="checkbox" checked> 保存到本地配置（凭据进系统安全存储）</label>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button id="btn-cancel-ssh">取消</button>
+                <button id="btn-connect-ssh">连接</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- xterm.js -->
+    <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
+    <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+    <script src="renderer.js"></script>
+</body>
+</html>
