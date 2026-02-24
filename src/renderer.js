@@ -1537,6 +1537,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     return !!(tab && tab.type === 'ssh');
   }
 
+  function normalizeSshTarget(target) {
+    if (!target || typeof target !== 'object') return null;
+    const host = String(target.host || '').trim();
+    const username = String(target.username || '').trim();
+    const port = Number(target.port) || 22;
+    const jumpConfigId = String(target.jumpConfigId || '').trim();
+    if (!host || !username) return null;
+    return { host, username, port, jumpConfigId };
+  }
+
+  function isSameSshTarget(a, b) {
+    const x = normalizeSshTarget(a);
+    const y = normalizeSshTarget(b);
+    if (!x || !y) return false;
+    return x.host === y.host
+      && x.username === y.username
+      && x.port === y.port
+      && x.jumpConfigId === y.jumpConfigId;
+  }
+
   function showQuickReconnect(show) {
     els.btnQuickReconnect.classList.toggle('show', !!show);
   }
@@ -1696,8 +1716,31 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function createTab(tab) {
-    tabs.push(tab);
+    const normalized = {
+      ...tab,
+      outputBuffer: typeof tab.outputBuffer === 'string' ? tab.outputBuffer : ''
+    };
+    tabs.push(normalized);
     renderTabs();
+  }
+
+  function trimTerminalBuffer(text) {
+    const limit = 200000;
+    if (!text || typeof text !== 'string') return '';
+    return text.length > limit ? text.slice(-limit) : text;
+  }
+
+  function appendOutputToCurrentTab(data) {
+    const tab = getCurrentTab();
+    if (!tab) return;
+    tab.outputBuffer = trimTerminalBuffer(`${tab.outputBuffer || ''}${String(data || '')}`);
+  }
+
+  function restoreTabOutput(tab) {
+    term.clear();
+    if (tab && tab.outputBuffer) {
+      term.write(tab.outputBuffer);
+    }
   }
 
   function renderTabs() {
@@ -1732,10 +1775,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     terminalShellState.historyDraft = '';
     terminalShellState.inputLineBuffer = '';
 
-    term.clear();
-    term.writeln(currentLocale === 'en-US'
-      ? `\x1b[1;36mSwitched to tab: ${tab.title}\x1b[0m`
-      : `\x1b[1;36m切换到标签: ${tab.title}\x1b[0m`);
+    restoreTabOutput(tab);
 
     if (tab.type === 'local') {
       const result = await window.terminal.startLocal();
@@ -1748,9 +1788,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (tab.type === 'ssh') {
+      const target = normalizeSshTarget(tab.lastConnectPayload || tab.sshConfig || {});
+      if (target) {
+        const fast = await window.terminal.activateSSH({ ...target, sessionId: tab.sessionId || '' });
+        if (fast && fast.ok) {
+          tab.sessionId = fast.sessionId || tab.sessionId || '';
+          setStatus(lr(
+            `已切回 ${target.username}@${target.host}`,
+            `Switched back to ${target.username}@${target.host}`
+          ), 'success');
+          return;
+        }
+      }
       if (tab.lastConnectPayload) {
         const result = await window.terminal.connectSSH(tab.lastConnectPayload);
         if (result && result.ok) {
+          restoreTabOutput(tab);
+          tab.sessionId = result.sessionId || tab.sessionId || '';
           setStatus(lr(
             `已连接 ${tab.lastConnectPayload.username}@${tab.lastConnectPayload.host}`,
             `Connected ${tab.lastConnectPayload.username}@${tab.lastConnectPayload.host}`
@@ -1775,9 +1829,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  function closeTab(tabId) {
+  async function closeTab(tabId) {
     const idx = tabs.findIndex((t) => t.id === tabId);
     if (idx < 0) return;
+    const closingTab = tabs[idx];
+    if (closingTab && closingTab.type === 'ssh' && closingTab.sessionId) {
+      await window.terminal.disconnectSSH({ sessionId: closingTab.sessionId });
+    }
     tabs.splice(idx, 1);
     if (!tabs.length) {
       createTab({ id: `local-${Date.now()}`, type: 'local', title: 'Local' });
@@ -1825,9 +1883,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         type: t.type === 'ssh' ? 'ssh' : 'local',
         title: t.title || (t.type === 'ssh' ? 'SSH' : 'Local'),
         sshConfig: t.sshConfig || null,
-        lastConnectPayload: null
+        lastConnectPayload: null,
+        sessionId: '',
+        outputBuffer: typeof t.outputBuffer === 'string' ? t.outputBuffer : ''
       }))
-      : [{ id: `local-${Date.now()}`, type: 'local', title: 'Local' }];
+      : [{ id: `local-${Date.now()}`, type: 'local', title: 'Local', outputBuffer: '' }];
 
     currentTabId = parsed.currentTabId && tabs.find((t) => t.id === parsed.currentTabId)
       ? parsed.currentTabId
@@ -2215,7 +2275,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         authType: payload.authType,
         jumpConfigId: payload.jumpConfigId || ''
       },
-      lastConnectPayload: payload
+      lastConnectPayload: payload,
+      sessionId: result.sessionId || '',
+      outputBuffer: ''
     };
     createTab(newTab);
     currentTabId = newTab.id;
@@ -2729,6 +2791,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           jumpConfigId: payload.jumpConfigId || ''
         };
         tab.lastConnectPayload = payload;
+        tab.sessionId = result.sessionId || tab.sessionId || '';
         currentTabId = tab.id;
       }
       pendingTabForConnect = null;
@@ -2744,7 +2807,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           authType: payload.authType,
           jumpConfigId: payload.jumpConfigId || ''
         },
-        lastConnectPayload: payload
+        lastConnectPayload: payload,
+        sessionId: result.sessionId || '',
+        outputBuffer: ''
       };
       createTab(newTab);
       currentTabId = newTab.id;
@@ -2791,6 +2856,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   window.terminal.onData((data) => {
+    appendOutputToCurrentTab(data);
     term.write(data);
   });
   window.terminal.onCwd((payload) => {
@@ -2908,7 +2974,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   els.authType.addEventListener('change', refreshAuthFields);
 
   els.btnDisconnectSsh.addEventListener('click', async () => {
-    await window.terminal.disconnectSSH();
+    const tab = getCurrentTab();
+    await window.terminal.disconnectSSH(tab && tab.sessionId ? { sessionId: tab.sessionId } : undefined);
+    if (tab && tab.type === 'ssh') {
+      tab.sessionId = '';
+    }
     reconnectStateActive = false;
     term.options.disableStdin = false;
     showQuickReconnect(false);
@@ -2963,7 +3033,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     openSettingsModal();
   });
   els.workspaceActionDisconnect.addEventListener('click', async () => {
-    await window.terminal.disconnectSSH();
+    const tab = getCurrentTab();
+    await window.terminal.disconnectSSH(tab && tab.sessionId ? { sessionId: tab.sessionId } : undefined);
+    if (tab && tab.type === 'ssh') {
+      tab.sessionId = '';
+    }
     reconnectStateActive = false;
     term.options.disableStdin = false;
     showQuickReconnect(false);
@@ -3236,6 +3310,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         await loadConnectionEditorFromConfig(selected);
       }
     });
+    els.savedSelect.addEventListener('dblclick', async () => {
+      const selected = getSelectedConfig();
+      if (!selected) {
+        setStatus(lr('请先选择一条SSH配置', 'Please select an SSH profile first'), 'error');
+        return;
+      }
+      await loadConnectionEditorFromConfig(selected);
+      await connectFromConnectionEditor();
+    });
   }
   if (els.connSearch) {
     els.connSearch.addEventListener('input', async () => {
@@ -3299,6 +3382,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       `手动快速重连 ${tab.lastConnectPayload.username}@${tab.lastConnectPayload.host}...`,
       `Manually reconnecting ${tab.lastConnectPayload.username}@${tab.lastConnectPayload.host}...`
     ), 'info');
+    if (tab.sessionId) {
+      await window.terminal.disconnectSSH({ sessionId: tab.sessionId });
+      tab.sessionId = '';
+    }
     const result = await window.terminal.connectSSH(tab.lastConnectPayload);
     if (!result || !result.ok) {
       setStatus(lr(
@@ -3308,6 +3395,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       showQuickReconnect(true);
       return;
     }
+    tab.sessionId = result.sessionId || '';
     setStatus(lr('快速重连成功', 'Quick reconnect succeeded'), 'success');
   });
 
@@ -3367,7 +3455,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateSystemMonitor();
   }, 3000);
 
-  tabs = [{ id: `local-${Date.now()}`, type: 'local', title: 'Local-1', lastConnectPayload: null, sshConfig: null }];
+  tabs = [{
+    id: `local-${Date.now()}`,
+    type: 'local',
+    title: 'Local-1',
+    lastConnectPayload: null,
+    sshConfig: null,
+    outputBuffer: ''
+  }];
   currentTabId = tabs[0].id;
   renderTabs();
   await switchToTab(currentTabId);

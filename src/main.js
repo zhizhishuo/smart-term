@@ -23,7 +23,8 @@ let mainWindow;
 let localPty = null;
 let activeMode = 'local';
 let currentSize = { cols: 80, rows: 24 };
-let sshSession = null;
+const sshSessions = new Map();
+let activeSshSessionId = '';
 let sshLastConnectConfig = null;
 let sshReconnectTimer = null;
 let sshReconnectAttempt = 0;
@@ -44,6 +45,31 @@ const SSH_SECRET_SERVICE = 'smart-term.ssh';
 function getActiveModeCwd() {
   if (activeMode === 'ssh') return modeCwd.ssh || '';
   return modeCwd.local || process.env.HOME || process.cwd();
+}
+
+function getActiveSshSession() {
+  if (!activeSshSessionId) return null;
+  return sshSessions.get(activeSshSessionId) || null;
+}
+
+function normalizeSshTarget(input) {
+  if (!input || typeof input !== 'object') return null;
+  const host = String(input.host || '').trim();
+  const username = String(input.username || '').trim();
+  const port = Number(input.port) || 22;
+  const jumpConfigId = String(input.jumpConfigId || '').trim();
+  if (!host || !username) return null;
+  return { host, username, port, jumpConfigId };
+}
+
+function isSameSshTarget(a, b) {
+  const x = normalizeSshTarget(a);
+  const y = normalizeSshTarget(b);
+  if (!x || !y) return false;
+  return x.host === y.host
+    && x.username === y.username
+    && x.port === y.port
+    && x.jumpConfigId === y.jumpConfigId;
 }
 
 function decodeFileUriPath(rawPath) {
@@ -162,6 +188,7 @@ function appendAuditLog(event, payload = {}, level = 'info') {
 function addCommandHistory(command) {
   const cmd = String(command || '').trim();
   if (!cmd) return;
+  const activeSsh = getActiveSshSession();
   const history = readHistory();
   const last = history[0];
   if (last && last.command === cmd) return;
@@ -169,7 +196,9 @@ function addCommandHistory(command) {
     id: crypto.randomUUID(),
     command: cmd,
     mode: activeMode,
-    target: activeMode === 'ssh' && sshSession ? `${sshSession.config.username}@${sshSession.config.host}:${sshSession.config.port}` : 'local',
+    target: activeMode === 'ssh' && activeSsh
+      ? `${activeSsh.config.username}@${activeSsh.config.host}:${activeSsh.config.port}`
+      : 'local',
     createdAt: new Date().toISOString()
   });
   writeHistory(history.slice(0, 2000));
@@ -187,6 +216,27 @@ function getSSHConfigPath() {
 
 function getKnownHostsPath() {
   return path.join(app.getPath('userData'), 'ssh-known-hosts.json');
+}
+
+function getSSHSecretsFallbackPath() {
+  return path.join(app.getPath('userData'), 'ssh-secrets-fallback.json');
+}
+
+function readSSHSecretsFallback() {
+  try {
+    const p = getSSHSecretsFallbackPath();
+    if (!fs.existsSync(p)) return {};
+    const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch (_err) {
+    return {};
+  }
+}
+
+function writeSSHSecretsFallback(store) {
+  const next = store && typeof store === 'object' && !Array.isArray(store) ? store : {};
+  fs.writeFileSync(getSSHSecretsFallbackPath(), JSON.stringify(next, null, 2), 'utf8');
 }
 
 function readKnownHosts() {
@@ -216,7 +266,7 @@ function getHostFingerprint(rawHostKey) {
 }
 
 async function saveSSHConfigSecret(configId, secret) {
-  if (!keytar || !configId) return { ok: false, skipped: true };
+  if (!configId) return { ok: false, skipped: true };
   const payload = {};
   if (secret && typeof secret === 'object') {
     if (secret.password) payload.password = String(secret.password);
@@ -224,6 +274,17 @@ async function saveSSHConfigSecret(configId, secret) {
     if (secret.passphrase) payload.passphrase = String(secret.passphrase);
   }
   const hasAny = !!(payload.password || payload.privateKey || payload.passphrase);
+  if (!keytar) {
+    const store = readSSHSecretsFallback();
+    if (!hasAny) {
+      delete store[String(configId)];
+      writeSSHSecretsFallback(store);
+      return { ok: true, cleared: true, fallback: true };
+    }
+    store[String(configId)] = payload;
+    writeSSHSecretsFallback(store);
+    return { ok: true, fallback: true };
+  }
   if (!hasAny) {
     await keytar.deletePassword(SSH_SECRET_SERVICE, String(configId));
     return { ok: true, cleared: true };
@@ -233,7 +294,17 @@ async function saveSSHConfigSecret(configId, secret) {
 }
 
 async function readSSHConfigSecret(configId) {
-  if (!keytar || !configId) return null;
+  if (!configId) return null;
+  if (!keytar) {
+    const store = readSSHSecretsFallback();
+    const raw = store[String(configId)];
+    if (!raw || typeof raw !== 'object') return null;
+    return {
+      password: raw.password ? String(raw.password) : '',
+      privateKey: raw.privateKey ? String(raw.privateKey) : '',
+      passphrase: raw.passphrase ? String(raw.passphrase) : ''
+    };
+  }
   try {
     const raw = await keytar.getPassword(SSH_SECRET_SERVICE, String(configId));
     if (!raw) return null;
@@ -339,40 +410,51 @@ function ensureLocalPty() {
   }
 }
 
-function closeSSHSession(reason = 'manual') {
-  if (!sshSession) return;
-  const snapshot = { ...(sshSession.config || {}) };
+function closeSSHSessionById(sessionId, reason = 'manual') {
+  const id = String(sessionId || '');
+  if (!id) return;
+  const session = sshSessions.get(id);
+  if (!session) return;
+  const snapshot = { ...(session.config || {}) };
 
   try {
-    if (sshSession.stream) {
-      sshSession.stream.end();
+    if (session.stream) {
+      session.stream.end();
     }
   } catch (_err) {
     // noop
   }
   try {
-    sshSession.client.end();
+    session.client.end();
   } catch (_err) {
     // noop
   }
   try {
-    if (sshSession.jumpClient) sshSession.jumpClient.end();
+    if (session.jumpClient) session.jumpClient.end();
   } catch (_err) {
     // noop
   }
 
-  sshSession = null;
+  sshSessions.delete(id);
+  const wasActive = activeSshSessionId === id;
+  if (wasActive) {
+    activeSshSessionId = '';
+    activeMode = 'local';
+  }
   appendAuditLog('ssh.disconnect', {
     reason,
     host: snapshot.host || '',
     port: snapshot.port || 22,
     username: snapshot.username || '',
-    jumpConfigId: snapshot.jumpConfigId || ''
+    jumpConfigId: snapshot.jumpConfigId || '',
+    sessionId: id
   }, reason === 'manual' ? 'info' : 'warn');
-  emitToRenderer('terminal:status', {
-    level: 'info',
-    message: reason === 'manual' ? 'SSH连接已断开' : `SSH连接已关闭: ${reason}`
-  });
+  if (wasActive) {
+    emitToRenderer('terminal:status', {
+      level: 'info',
+      message: reason === 'manual' ? 'SSH连接已断开' : `SSH连接已关闭: ${reason}`
+    });
+  }
 }
 
 function clearReconnectTimer() {
@@ -553,11 +635,7 @@ function connectSSH(config, opts = {}) {
     }
 
     if (!opts.skipClose) {
-      sshManualDisconnect = true;
-      clearReconnectTimer();
-      sshReconnectStartedAt = null;
-      emitReconnectState({ active: false, reason: 'manual-stop' });
-      closeSSHSession('replace');
+      sshManualDisconnect = false;
     }
     appendAuditLog('ssh.connect.attempt', {
       host: config.host,
@@ -623,12 +701,15 @@ function connectSSH(config, opts = {}) {
             return;
           }
 
-          sshSession = {
+          const sessionId = crypto.randomUUID();
+          const session = {
             client,
             jumpClient,
             stream,
             config: { host: config.host, port, username: config.username, jumpConfigId: config.jumpConfigId || '' }
           };
+          sshSessions.set(sessionId, session);
+          activeSshSessionId = sessionId;
           sshLastConnectConfig = { ...config };
           sshManualDisconnect = false;
           sshReconnectAttempt = 0;
@@ -649,23 +730,29 @@ function connectSSH(config, opts = {}) {
 
           stream.on('data', (data) => {
             probeCwdFromOutput('ssh', data.toString('utf8'));
-            if (activeMode === 'ssh') {
+            if (activeMode === 'ssh' && activeSshSessionId === sessionId) {
               emitToRenderer('terminal:data', data.toString('utf8'));
             }
           });
 
           stream.on('close', () => {
-            emitToRenderer('terminal:exit', { exitCode: 0, signal: null, source: 'ssh' });
-            closeSSHSession('stream-close');
-            activeMode = 'local';
-            ensureLocalPty();
-            emitToRenderer('terminal:status', { level: 'info', message: '已切回本地终端' });
-            scheduleSSHReconnect('stream-close');
+            const wasActive = activeSshSessionId === sessionId;
+            if (wasActive) {
+              emitToRenderer('terminal:exit', { exitCode: 0, signal: null, source: 'ssh' });
+            }
+            closeSSHSessionById(sessionId, 'stream-close');
+            if (wasActive) {
+              ensureLocalPty();
+              emitToRenderer('terminal:status', { level: 'info', message: '已切回本地终端' });
+              scheduleSSHReconnect('stream-close');
+            }
           });
 
           client.on('error', (error) => {
-            emitToRenderer('terminal:status', { level: 'error', message: `SSH错误: ${String(error.message || error)}` });
-            scheduleSSHReconnect('client-error');
+            if (activeSshSessionId === sessionId) {
+              emitToRenderer('terminal:status', { level: 'error', message: `SSH错误: ${String(error.message || error)}` });
+              scheduleSSHReconnect('client-error');
+            }
           });
 
           if (!resolved) {
@@ -679,9 +766,10 @@ function connectSSH(config, opts = {}) {
               port,
               username: config.username,
               jumpConfigId: config.jumpConfigId || '',
-              reconnecting: !!opts.reconnecting
+              reconnecting: !!opts.reconnecting,
+              sessionId
             }, 'info');
-            resolve({ ok: true, mode: 'ssh' });
+            resolve({ ok: true, mode: 'ssh', sessionId });
           }
         }
       );
@@ -1622,12 +1710,17 @@ ipcMain.handle('terminal:connect-ssh', (_event, config) => {
   return connectSSH(config);
 });
 
-ipcMain.handle('terminal:disconnect-ssh', () => {
+ipcMain.handle('terminal:disconnect-ssh', (_event, payload) => {
+  const targetSessionId = payload && payload.sessionId ? String(payload.sessionId) : '';
   sshManualDisconnect = true;
   clearReconnectTimer();
   sshReconnectStartedAt = null;
   emitReconnectState({ active: false, reason: 'manual-disconnect' });
-  closeSSHSession('manual');
+  if (targetSessionId) {
+    closeSSHSessionById(targetSessionId, 'manual');
+  } else if (activeSshSessionId) {
+    closeSSHSessionById(activeSshSessionId, 'manual');
+  }
   activeMode = 'local';
   const result = ensureLocalPty();
   emitToRenderer('terminal:cwd', { mode: 'local', cwd: modeCwd.local || '' });
@@ -1635,7 +1728,47 @@ ipcMain.handle('terminal:disconnect-ssh', () => {
 });
 
 ipcMain.handle('terminal:get-state', () => {
-  return { mode: activeMode, sshConnected: !!sshSession };
+  const activeSsh = getActiveSshSession();
+  return {
+    mode: activeMode,
+    sshConnected: !!activeSsh,
+    sshSessionId: activeSshSessionId || '',
+    sshTarget: activeSsh ? normalizeSshTarget(activeSsh.config || {}) : null
+  };
+});
+
+ipcMain.handle('terminal:activate-ssh', (_event, payload) => {
+  const bySessionId = payload && payload.sessionId ? sshSessions.get(String(payload.sessionId)) : null;
+  if (bySessionId) {
+    activeSshSessionId = String(payload.sessionId);
+    activeMode = 'ssh';
+    emitToRenderer('terminal:cwd', { mode: 'ssh', cwd: modeCwd.ssh || '' });
+    return {
+      ok: true,
+      mode: 'ssh',
+      sessionId: activeSshSessionId,
+      target: normalizeSshTarget(bySessionId.config || {})
+    };
+  }
+  const expected = normalizeSshTarget(payload || {});
+  if (!expected) {
+    return { ok: false, error: 'no-active-ssh-session' };
+  }
+  const matchedEntry = Array.from(sshSessions.entries()).find(([, session]) => {
+    return isSameSshTarget(session && session.config ? session.config : null, expected);
+  });
+  if (!matchedEntry) {
+    return { ok: false, error: 'no-active-ssh-session' };
+  }
+  activeSshSessionId = matchedEntry[0];
+  activeMode = 'ssh';
+  emitToRenderer('terminal:cwd', { mode: 'ssh', cwd: modeCwd.ssh || '' });
+  return {
+    ok: true,
+    mode: 'ssh',
+    sessionId: activeSshSessionId,
+    target: normalizeSshTarget(matchedEntry[1].config || {})
+  };
 });
 
 ipcMain.handle('terminal:get-cwd', () => {
@@ -1681,8 +1814,9 @@ ipcMain.on('terminal:write', (_event, data) => {
     }
   }
 
-  if (activeMode === 'ssh' && sshSession && sshSession.stream) {
-    sshSession.stream.write(data);
+  const activeSsh = getActiveSshSession();
+  if (activeMode === 'ssh' && activeSsh && activeSsh.stream) {
+    activeSsh.stream.write(data);
     return;
   }
   const started = ensureLocalPty();
@@ -1707,9 +1841,10 @@ ipcMain.on('terminal:resize', (_event, payload) => {
       // noop
     }
   }
-  if (sshSession && sshSession.stream && typeof sshSession.stream.setWindow === 'function') {
+  const activeSsh = getActiveSshSession();
+  if (activeSsh && activeSsh.stream && typeof activeSsh.stream.setWindow === 'function') {
     try {
-      sshSession.stream.setWindow(rows, cols, 0, 0);
+      activeSsh.stream.setWindow(rows, cols, 0, 0);
     } catch (_err) {
       // noop
     }
@@ -2053,8 +2188,8 @@ app.on('window-all-closed', () => {
     }
     localPty = null;
   }
-  if (sshSession) {
-    closeSSHSession('app-exit');
+  for (const sessionId of Array.from(sshSessions.keys())) {
+    closeSSHSessionById(sessionId, 'app-exit');
   }
   for (const [panelId, panel] of sftpPanels.entries()) {
     try {

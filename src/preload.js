@@ -10,7 +10,8 @@ console.log('=== Smart-Term Preload脚本启动 ===');
 contextBridge.exposeInMainWorld('terminal', {
   startLocal: () => ipcRenderer.invoke('terminal:start-local'),
   connectSSH: (config) => ipcRenderer.invoke('terminal:connect-ssh', config),
-  disconnectSSH: () => ipcRenderer.invoke('terminal:disconnect-ssh'),
+  activateSSH: (target) => ipcRenderer.invoke('terminal:activate-ssh', target),
+  disconnectSSH: (payload) => ipcRenderer.invoke('terminal:disconnect-ssh', payload),
   getState: () => ipcRenderer.invoke('terminal:get-state'),
   getCwd: () => ipcRenderer.invoke('terminal:get-cwd'),
   write: (data) => ipcRenderer.send('terminal:write', data),
