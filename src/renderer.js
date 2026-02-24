@@ -2186,12 +2186,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function updateSystemMonitor() {
     const info = await window.terminal.getSystemInfo();
     if (!info) return;
+    const sourceLabel = info.source === 'remote'
+      ? lr(`远程 ${info.os && info.os.hostname ? info.os.hostname : ''}`.trim(), `Remote ${info.os && info.os.hostname ? info.os.hostname : ''}`.trim())
+      : info.source === 'local-fallback'
+        ? lr('本地(远程读取失败)', 'Local (remote read failed)')
+        : lr('本地', 'Local');
     const cpuModel = info.cpu && info.cpu.model ? info.cpu.model : 'CPU';
     const cores = Number(info.cpu && info.cpu.cores ? info.cpu.cores : 1);
     const overall = Number(info.cpu && info.cpu.overallPercent ? info.cpu.overallPercent : 0);
     const load1 = Number(info.cpu && info.cpu.load1 ? info.cpu.load1 : 0);
     const perCore = Array.isArray(info.cpu && info.cpu.perCore) ? info.cpu.perCore : [];
-    els.cpuSummary.textContent = `${cpuModel} | ${cores} cores | Overall ${overall.toFixed(1)}% | Load1 ${load1.toFixed(2)}`;
+    els.cpuSummary.textContent = `${sourceLabel} | ${cpuModel} | ${cores} cores | Overall ${overall.toFixed(1)}% | Load1 ${load1.toFixed(2)}`;
     if (cpuMonitorMode === 'detailed') {
       els.cpuCoreList.classList.remove('hidden');
       els.cpuOverviewLine.classList.add('hidden');

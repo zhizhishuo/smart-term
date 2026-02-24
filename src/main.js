@@ -934,12 +934,13 @@ function getCpuUsageSnapshot() {
   };
 }
 
-function getSystemInfo() {
+function getSystemInfoLocal() {
   const cpuInfo = getCpuUsageSnapshot();
   const memory = getMemoryInfo();
   const disk = getDiskInfoByPath(os.homedir() || '/');
 
   return {
+    source: 'local',
     cpu: cpuInfo,
     memory,
     disk,
@@ -950,6 +951,224 @@ function getSystemInfo() {
       uptimeSec: os.uptime()
     }
   };
+}
+
+function parseCpuStatLine(line) {
+  const text = String(line || '').trim();
+  if (!text.startsWith('cpu')) return null;
+  const parts = text.split(/\s+/);
+  if (parts.length < 5) return null;
+  const id = parts[0];
+  const nums = parts.slice(1).map((v) => Number(v) || 0);
+  const idle = (nums[3] || 0) + (nums[4] || 0);
+  const total = nums.reduce((sum, n) => sum + n, 0);
+  return { id, idle, total };
+}
+
+function buildCpuUsageFromSnapshots(beforeLines, afterLines, model, load1) {
+  const beforeMap = new Map();
+  (beforeLines || []).forEach((line) => {
+    const parsed = parseCpuStatLine(line);
+    if (parsed) beforeMap.set(parsed.id, parsed);
+  });
+  const afterMap = new Map();
+  (afterLines || []).forEach((line) => {
+    const parsed = parseCpuStatLine(line);
+    if (parsed) afterMap.set(parsed.id, parsed);
+  });
+
+  const perCore = [];
+  let overallPercent = 0;
+  Array.from(afterMap.keys()).forEach((id) => {
+    const prev = beforeMap.get(id);
+    const next = afterMap.get(id);
+    if (!prev || !next) return;
+    const totalDelta = Math.max(0, next.total - prev.total);
+    const idleDelta = Math.max(0, next.idle - prev.idle);
+    const usagePercent = totalDelta > 0 ? (1 - idleDelta / totalDelta) * 100 : 0;
+    if (id === 'cpu') {
+      overallPercent = Math.max(0, Math.min(100, usagePercent));
+      return;
+    }
+    const idxMatch = id.match(/^cpu(\d+)$/);
+    if (!idxMatch) return;
+    perCore.push({
+      index: Number(idxMatch[1]),
+      usagePercent: Math.max(0, Math.min(100, usagePercent))
+    });
+  });
+  perCore.sort((a, b) => a.index - b.index);
+
+  return {
+    model: String(model || 'Remote CPU'),
+    cores: perCore.length,
+    load1: Number(load1 || 0),
+    load5: 0,
+    overallPercent,
+    perCore
+  };
+}
+
+function parseRemoteMemInfo(lines) {
+  const map = {};
+  (lines || []).forEach((line) => {
+    const m = String(line || '').match(/^(MemTotal|MemAvailable|MemFree):\s+(\d+)\s+kB/i);
+    if (!m) return;
+    map[m[1]] = Number(m[2]) * 1024;
+  });
+  const total = Number(map.MemTotal || 0);
+  const available = Number(map.MemAvailable || map.MemFree || 0);
+  const used = Math.max(0, total - available);
+  return {
+    total,
+    used,
+    free: available,
+    usedPercent: total > 0 ? (used / total) * 100 : 0,
+    source: 'remote-proc-meminfo'
+  };
+}
+
+function parseRemoteDiskInfo(line) {
+  const cols = String(line || '').trim().split(/\s+/);
+  if (cols.length < 6) {
+    return { mount: '/', usedPercent: 0, total: 0, used: 0, available: 0, source: 'remote-unknown' };
+  }
+  const total = Number(cols[1]) * 1024;
+  const used = Number(cols[2]) * 1024;
+  const available = Number(cols[3]) * 1024;
+  const usedPercent = Number(String(cols[4] || '').replace('%', '')) || 0;
+  const mount = cols.slice(5).join(' ') || '/';
+  return { mount, usedPercent, total, used, available, source: 'remote-df' };
+}
+
+function parseSectionedOutput(text) {
+  const sections = {};
+  let current = '';
+  String(text || '').split(/\r?\n/).forEach((line) => {
+    const marker = String(line || '').trim();
+    if (/^__ST_[A-Z0-9_]+__$/.test(marker)) {
+      current = marker;
+      sections[current] = [];
+      return;
+    }
+    if (!current) return;
+    sections[current].push(line);
+  });
+  return sections;
+}
+
+function execSshCommand(session, command, timeoutMs = 4000) {
+  return new Promise((resolve, reject) => {
+    if (!session || !session.client) {
+      reject(new Error('SSH session unavailable'));
+      return;
+    }
+    let done = false;
+    let stdout = '';
+    let stderr = '';
+    let timer = null;
+    session.client.exec(command, (err, stream) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        try {
+          stream.close();
+        } catch (_e) {
+          // noop
+        }
+        reject(new Error('remote command timeout'));
+      }, Math.max(500, Number(timeoutMs) || 4000));
+      stream.on('data', (chunk) => {
+        stdout += chunk.toString('utf8');
+      });
+      stream.stderr.on('data', (chunk) => {
+        stderr += chunk.toString('utf8');
+      });
+      stream.on('close', (code) => {
+        if (done) return;
+        done = true;
+        if (timer) clearTimeout(timer);
+        if (code !== 0 && !stdout.trim()) {
+          reject(new Error(stderr.trim() || `remote command exit ${code}`));
+          return;
+        }
+        resolve({ stdout, stderr, code: Number(code || 0) });
+      });
+      stream.on('error', (streamErr) => {
+        if (done) return;
+        done = true;
+        if (timer) clearTimeout(timer);
+        reject(streamErr);
+      });
+    });
+  });
+}
+
+async function getSystemInfoRemote(session) {
+  const script = [
+    'echo "__ST_CPU_MODEL__"',
+    '(grep -m1 "^model name" /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed "s/^ *//" || uname -m 2>/dev/null || echo "Remote CPU")',
+    'echo "__ST_LOAD__"',
+    '(awk \'{print $1}\' /proc/loadavg 2>/dev/null || echo "0")',
+    'echo "__ST_CPU_A__"',
+    'cat /proc/stat 2>/dev/null | grep "^cpu"',
+    'sleep 0.25',
+    'echo "__ST_CPU_B__"',
+    'cat /proc/stat 2>/dev/null | grep "^cpu"',
+    'echo "__ST_MEM__"',
+    'cat /proc/meminfo 2>/dev/null | grep -E "^(MemTotal|MemAvailable|MemFree):"',
+    'echo "__ST_DISK__"',
+    'df -kP "$HOME" 2>/dev/null | tail -n 1',
+    'echo "__ST_HOST__"',
+    '(hostname 2>/dev/null || echo unknown)',
+    'echo "__ST_OS__"',
+    '(uname -s 2>/dev/null || echo linux)'
+  ].join('\n');
+  const result = await execSshCommand(session, script, 4500);
+  const sections = parseSectionedOutput(result.stdout);
+
+  const cpu = buildCpuUsageFromSnapshots(
+    sections.__ST_CPU_A__ || [],
+    sections.__ST_CPU_B__ || [],
+    (sections.__ST_CPU_MODEL__ && sections.__ST_CPU_MODEL__[0]) || 'Remote CPU',
+    (sections.__ST_LOAD__ && sections.__ST_LOAD__[0]) || 0
+  );
+  const memory = parseRemoteMemInfo(sections.__ST_MEM__ || []);
+  const disk = parseRemoteDiskInfo((sections.__ST_DISK__ && sections.__ST_DISK__[0]) || '');
+  const hostname = String((sections.__ST_HOST__ && sections.__ST_HOST__[0]) || '').trim() || 'remote';
+  const platform = String((sections.__ST_OS__ && sections.__ST_OS__[0]) || '').trim().toLowerCase() || 'linux';
+
+  return {
+    source: 'remote',
+    cpu,
+    memory,
+    disk,
+    os: {
+      platform,
+      release: '',
+      hostname,
+      uptimeSec: 0
+    }
+  };
+}
+
+async function getSystemInfo() {
+  if (activeMode === 'ssh') {
+    const activeSsh = getActiveSshSession();
+    if (activeSsh) {
+      try {
+        return await getSystemInfoRemote(activeSsh);
+      } catch (_err) {
+        const local = getSystemInfoLocal();
+        return { ...local, source: 'local-fallback' };
+      }
+    }
+  }
+  return getSystemInfoLocal();
 }
 
 function parseMemInfoFromProc() {
@@ -1949,8 +2168,8 @@ ipcMain.handle('settings:save', (_event, patch) => {
   return { ok: true, settings: next };
 });
 
-ipcMain.handle('system:get-info', () => {
-  return getSystemInfo();
+ipcMain.handle('system:get-info', async () => {
+  return await getSystemInfo();
 });
 
 ipcMain.handle('sftp:connect-panel', (_event, payload) => {
