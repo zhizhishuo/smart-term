@@ -136,6 +136,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     r2rRightOpname: document.getElementById('r2r-right-opname'),
     r2rLeftPath: document.getElementById('r2r-left-path'),
     r2rRightPath: document.getElementById('r2r-right-path'),
+    r2rLeftGoto: document.getElementById('r2r-left-goto'),
+    r2rRightGoto: document.getElementById('r2r-right-goto'),
+    r2rLeftGotoBtn: document.getElementById('r2r-left-goto-btn'),
+    r2rRightGotoBtn: document.getElementById('r2r-right-goto-btn'),
     r2rLeftRecent: document.getElementById('r2r-left-recent'),
     r2rRightRecent: document.getElementById('r2r-right-recent'),
     r2rLeftFavorite: document.getElementById('r2r-left-favorite'),
@@ -366,6 +370,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       r2rUp: '上级',
       r2rRefresh: '刷新',
       r2rDisconnected: '未连接',
+      r2rGotoPlaceholder: '输入路径后回车（如 /tmp）',
+      r2rGoto: '跳转',
       r2rFavAdd: '收藏',
       r2rFavDel: '取消收藏',
       r2rCredentialPlaceholder: '密码 / 私钥内容或路径',
@@ -528,6 +534,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       r2rUp: 'Up',
       r2rRefresh: 'Refresh',
       r2rDisconnected: 'Disconnected',
+      r2rGotoPlaceholder: 'Enter path then press Enter (e.g. /tmp)',
+      r2rGoto: 'Go',
       r2rFavAdd: 'Favorite',
       r2rFavDel: 'Unfavorite',
       r2rCredentialPlaceholder: 'Password / private key content or path',
@@ -717,6 +725,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (els.r2rRightUp) els.r2rRightUp.textContent = t('r2rUp');
     if (els.r2rLeftRefresh) els.r2rLeftRefresh.textContent = t('r2rRefresh');
     if (els.r2rRightRefresh) els.r2rRightRefresh.textContent = t('r2rRefresh');
+    if (els.r2rLeftGotoBtn) els.r2rLeftGotoBtn.textContent = t('r2rGoto');
+    if (els.r2rRightGotoBtn) els.r2rRightGotoBtn.textContent = t('r2rGoto');
+    setPlaceholder('r2r-left-goto', 'r2rGotoPlaceholder');
+    setPlaceholder('r2r-right-goto', 'r2rGotoPlaceholder');
     if (els.r2rLeftPath && !r2rState.left.connected) els.r2rLeftPath.textContent = t('r2rDisconnected');
     if (els.r2rRightPath && !r2rState.right.connected) els.r2rRightPath.textContent = t('r2rDisconnected');
     if (els.r2rLeftFavAdd) els.r2rLeftFavAdd.textContent = t('r2rFavAdd');
@@ -1737,10 +1749,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function restoreTabOutput(tab) {
-    term.clear();
+    syncTerminalSizeToBackend(true);
+    try {
+      term.reset();
+    } catch (_err) {
+      term.clear();
+    }
     if (tab && tab.outputBuffer) {
       term.write(tab.outputBuffer);
     }
+    syncTerminalSizeToBackend(true);
+    requestAnimationFrame(() => syncTerminalSizeToBackend(true));
   }
 
   function renderTabs() {
@@ -2226,6 +2245,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function connectFromConnectionEditor() {
     const authType = els.connAuthType.value === 'key' ? 'key' : 'password';
+    const selected = getSelectedConfig();
+    const profileId = editingConfigId || (selected && selected.id ? selected.id : '');
+    const savedSecret = profileId ? await getSavedSecret(profileId) : null;
+    const savedConfig = profileId ? getConfigById(profileId) : selected;
     const payload = {
       name: els.connName.value.trim(),
       host: els.connHost.value.trim(),
@@ -2239,15 +2262,28 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     if (authType === 'key') {
-      const key = String(els.connKey.value || '').trim();
-      if (!key || !key.includes('BEGIN')) {
-        setStatus(lr('终端SSH连接需要粘贴私钥内容（非文件路径）', 'SSH terminal connection requires pasted private key content (not file path)'), 'error');
+      const keyInput = String(els.connKey.value || '').trim();
+      const keyFromSecret = String(savedSecret && savedSecret.privateKey ? savedSecret.privateKey : '').trim();
+      const keyFromSavedPath = String(savedConfig && savedConfig.keyPath ? savedConfig.keyPath : '').trim();
+      const effectiveKey = keyInput || keyFromSecret || keyFromSavedPath;
+      if (!effectiveKey) {
+        setStatus(lr('私钥认证缺少私钥内容或路径', 'Key auth requires private key content or key path'), 'error');
         return;
       }
-      payload.privateKey = key;
-      if (els.connPassphrase.value) payload.passphrase = els.connPassphrase.value;
+      if (effectiveKey.includes('BEGIN')) {
+        payload.privateKey = effectiveKey;
+      } else {
+        payload.keyPath = effectiveKey;
+      }
+      payload.passphrase = String(els.connPassphrase.value || (savedSecret && savedSecret.passphrase) || '').trim();
     } else {
-      payload.password = els.connPassword.value || '';
+      const passwordInput = String(els.connPassword.value || '');
+      const passwordSaved = String(savedSecret && savedSecret.password ? savedSecret.password : '');
+      payload.password = passwordInput || passwordSaved;
+      if (!payload.password) {
+        setStatus(lr('密码认证缺少密码，请先保存或输入密码', 'Password auth requires a password. Save or enter one first'), 'error');
+        return;
+      }
     }
 
     setStatus(lr(
@@ -2401,6 +2437,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const idx = normalized.lastIndexOf('/');
     if (idx <= 0) return '/';
     return normalized.slice(0, idx);
+  }
+
+  async function r2rGotoPath(side) {
+    const input = side === 'left' ? els.r2rLeftGoto : els.r2rRightGoto;
+    if (!input) return;
+    const target = String(input.value || '').trim();
+    if (!target) {
+      setStatus(lr('请输入目录路径', 'Please enter a target path'), 'info');
+      return;
+    }
+    await r2rListPanel(side, target);
   }
 
   async function r2rListPanel(side, targetPath) {
@@ -3220,10 +3267,42 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   els.r2rLeftConnect.addEventListener('click', () => r2rConnectPanel('left'));
   els.r2rRightConnect.addEventListener('click', () => r2rConnectPanel('right'));
+  els.r2rLeftConfig.addEventListener('change', () => {
+    if (els.r2rLeftConfig.value) {
+      r2rConnectPanel('left');
+    }
+  });
+  els.r2rRightConfig.addEventListener('change', () => {
+    if (els.r2rRightConfig.value) {
+      r2rConnectPanel('right');
+    }
+  });
   els.r2rLeftUp.addEventListener('click', () => r2rListPanel('left', parentPath(r2rState.left.cwd)));
   els.r2rRightUp.addEventListener('click', () => r2rListPanel('right', parentPath(r2rState.right.cwd)));
   els.r2rLeftRefresh.addEventListener('click', () => r2rListPanel('left', r2rState.left.cwd));
   els.r2rRightRefresh.addEventListener('click', () => r2rListPanel('right', r2rState.right.cwd));
+  if (els.r2rLeftGotoBtn) {
+    els.r2rLeftGotoBtn.addEventListener('click', () => r2rGotoPath('left'));
+  }
+  if (els.r2rRightGotoBtn) {
+    els.r2rRightGotoBtn.addEventListener('click', () => r2rGotoPath('right'));
+  }
+  if (els.r2rLeftGoto) {
+    els.r2rLeftGoto.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        r2rGotoPath('left');
+      }
+    });
+  }
+  if (els.r2rRightGoto) {
+    els.r2rRightGoto.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        r2rGotoPath('right');
+      }
+    });
+  }
   els.r2rLeftMkdir.addEventListener('click', () => r2rMkdir('left'));
   els.r2rRightMkdir.addEventListener('click', () => r2rMkdir('right'));
   els.r2rLeftRename.addEventListener('click', () => r2rRename('left'));
@@ -3308,6 +3387,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const selected = getSelectedConfig();
       if (selected) {
         await loadConnectionEditorFromConfig(selected);
+        await connectFromConnectionEditor();
       }
     });
     els.savedSelect.addEventListener('dblclick', async () => {

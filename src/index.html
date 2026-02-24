@@ -714,6 +714,35 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
+        .r2r-list-toolbar {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 6px;
+        }
+        .r2r-list-toolbar input {
+            flex: 1 1 auto;
+            min-width: 0;
+            height: 24px;
+            border: 1px solid #3a3a3a;
+            background: #1f1f1f;
+            color: #d4d4d4;
+            border-radius: 6px;
+            font-size: 11px;
+            padding: 0 8px;
+        }
+        .r2r-list-toolbar button {
+            height: 24px;
+            border: 1px solid #3a3a3a;
+            background: #242424;
+            color: #d4d4d4;
+            border-radius: 6px;
+            font-size: 11px;
+            padding: 0 8px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
         .r2r-quicknav {
             display: grid;
             grid-template-columns: 1fr 1fr auto auto;
@@ -808,9 +837,11 @@
         }
         #transfer-progress {
             position: fixed;
-            right: 16px;
-            bottom: 16px;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
             width: 360px;
+            max-width: min(92vw, 420px);
             background: #252526;
             border: 1px solid #3a3a3a;
             border-radius: 10px;
@@ -1042,6 +1073,17 @@
                 width: 100%;
                 min-width: 0;
             }
+            .r2r-list-toolbar {
+                justify-content: stretch;
+                flex-wrap: wrap;
+            }
+            .r2r-list-toolbar input {
+                width: 100%;
+                flex-basis: 100%;
+            }
+            .r2r-list-toolbar button {
+                width: 100%;
+            }
         }
     </style>
 </head>
@@ -1255,8 +1297,6 @@
                         <input id="r2r-left-password" type="text" placeholder="密码 / 私钥内容或路径">
                         <input id="r2r-left-passphrase" type="password" placeholder="私钥口令(可选)">
                         <button id="r2r-left-connect">连接</button>
-                        <button id="r2r-left-up">上级</button>
-                        <button id="r2r-left-refresh">刷新</button>
                     </div>
                     <div class="r2r-path" id="r2r-left-path">未连接</div>
                     <div class="r2r-quicknav">
@@ -1275,6 +1315,12 @@
                         <button id="r2r-left-upload">上传</button>
                         <button id="r2r-left-download">下载</button>
                     </div>
+                    <div class="r2r-list-toolbar">
+                        <input id="r2r-left-goto" type="text" placeholder="输入路径后回车（如 /tmp）">
+                        <button id="r2r-left-goto-btn">跳转</button>
+                        <button id="r2r-left-up">上级</button>
+                        <button id="r2r-left-refresh">刷新</button>
+                    </div>
                     <div class="r2r-list" id="r2r-left-list"></div>
                 </div>
                 <div class="r2r-splitter" id="r2r-splitter" title="拖拽调整左右面板宽度"></div>
@@ -1284,8 +1330,6 @@
                         <input id="r2r-right-password" type="text" placeholder="密码 / 私钥内容或路径">
                         <input id="r2r-right-passphrase" type="password" placeholder="私钥口令(可选)">
                         <button id="r2r-right-connect">连接</button>
-                        <button id="r2r-right-up">上级</button>
-                        <button id="r2r-right-refresh">刷新</button>
                     </div>
                     <div class="r2r-path" id="r2r-right-path">未连接</div>
                     <div class="r2r-quicknav">
@@ -1303,6 +1347,12 @@
                     <div class="r2r-actions">
                         <button id="r2r-right-upload">上传</button>
                         <button id="r2r-right-download">下载</button>
+                    </div>
+                    <div class="r2r-list-toolbar">
+                        <input id="r2r-right-goto" type="text" placeholder="输入路径后回车（如 /tmp）">
+                        <button id="r2r-right-goto-btn">跳转</button>
+                        <button id="r2r-right-up">上级</button>
+                        <button id="r2r-right-refresh">刷新</button>
                     </div>
                     <div class="r2r-list" id="r2r-right-list"></div>
                 </div>
