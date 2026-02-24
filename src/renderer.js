@@ -63,6 +63,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     navMonitor: document.getElementById('nav-monitor'),
     sidebar: document.getElementById('sidebar'),
     workspace: document.getElementById('workspace'),
+    workspaceViewHeader: document.getElementById('workspace-view-header'),
     workspaceViewTitle: document.getElementById('workspace-view-title'),
     workspaceViewSubtitle: document.getElementById('workspace-view-subtitle'),
     workspacePrimaryAction: document.getElementById('workspace-primary-action'),
@@ -1416,6 +1417,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const isTerminal = view === 'terminal';
     if (els.tabsBar) els.tabsBar.classList.toggle('hidden', !isTerminal);
     if (els.terminalContainer) els.terminalContainer.classList.toggle('hidden', !isTerminal);
+    if (els.workspaceViewHeader) els.workspaceViewHeader.classList.toggle('hidden', isTerminal);
 
     const showTransfer = view === 'transfer';
     const showHistory = view === 'history';
@@ -1512,6 +1514,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     workspacePrimaryActionHandler = () => {
       els.btnLocal.click();
     };
+    // Terminal page keeps a compact layout; tab operations live in the tabs bar.
+    els.workspaceViewTitle.textContent = '';
+    els.workspaceViewSubtitle.textContent = '';
   }
 
   function closeActiveOverlayByEsc() {
@@ -2058,6 +2063,75 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
       renderTabs();
     }
+  }
+
+  function switchTabByOffset(offset) {
+    if (!Array.isArray(tabs) || tabs.length < 2) return false;
+    const currentIndex = tabs.findIndex((t) => t.id === currentTabId);
+    const baseIndex = currentIndex >= 0 ? currentIndex : 0;
+    const total = tabs.length;
+    const nextIndex = ((baseIndex + Number(offset || 0)) % total + total) % total;
+    if (nextIndex === baseIndex) return false;
+    switchToTab(tabs[nextIndex].id);
+    return true;
+  }
+
+  function switchTabByShortcutNumber(num) {
+    const n = Number(num || 0);
+    if (!Number.isInteger(n) || n < 1) return false;
+    const idx = n - 1;
+    if (idx >= tabs.length) return false;
+    switchToTab(tabs[idx].id);
+    return true;
+  }
+
+  function handleTabSwitchShortcut(event) {
+    if (!event || event.type !== 'keydown') return false;
+    const key = String(event.key || '');
+    const noAlt = !event.altKey;
+    const onlyCtrl = event.ctrlKey && !event.metaKey && noAlt;
+    const onlyMeta = event.metaKey && !event.ctrlKey && noAlt;
+
+    // Next / previous tab
+    if (onlyCtrl && key === 'Tab' && !event.shiftKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      return switchTabByOffset(1);
+    }
+    if (onlyCtrl && key === 'Tab' && event.shiftKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      return switchTabByOffset(-1);
+    }
+    if (onlyCtrl && !event.shiftKey && key === 'PageDown') {
+      event.preventDefault();
+      event.stopPropagation();
+      return switchTabByOffset(1);
+    }
+    if (onlyCtrl && !event.shiftKey && key === 'PageUp') {
+      event.preventDefault();
+      event.stopPropagation();
+      return switchTabByOffset(-1);
+    }
+    if (onlyMeta && event.shiftKey && key === ']') {
+      event.preventDefault();
+      event.stopPropagation();
+      return switchTabByOffset(1);
+    }
+    if (onlyMeta && event.shiftKey && key === '[') {
+      event.preventDefault();
+      event.stopPropagation();
+      return switchTabByOffset(-1);
+    }
+
+    // Jump to tab by number (Ctrl/Cmd + 1..9).
+    if ((onlyCtrl || onlyMeta) && !event.shiftKey && /^[1-9]$/.test(key)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return switchTabByShortcutNumber(Number(key));
+    }
+
+    return false;
   }
 
   function saveWorkspaceSession() {
@@ -3091,6 +3165,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   term.attachCustomKeyEventHandler((event) => {
     if (!event || event.type !== 'keydown') return true;
+    if (handleTabSwitchShortcut(event)) return false;
     const onlyAlt = event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
     if (!onlyAlt) return true;
     if (event.key === 'ArrowUp') {
@@ -3338,22 +3413,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     setActiveNav('nav-settings');
     openSettingsModal();
   });
-  els.workspaceActionDisconnect.addEventListener('click', async () => {
-    const tab = getCurrentTab();
-    await window.terminal.disconnectSSH(tab && tab.sessionId ? { sessionId: tab.sessionId } : undefined);
-    if (tab && tab.type === 'ssh') {
-      tab.sessionId = '';
-    }
-    reconnectStateActive = false;
-    term.options.disableStdin = false;
-    showQuickReconnect(false);
-    setStatus(lr('SSH已断开，已切回本地', 'SSH disconnected, switched to local'), 'info');
-    term.focus();
-  });
-  els.workspaceActionSaveSession.addEventListener('click', saveWorkspaceSession);
-  els.workspaceActionLoadSession.addEventListener('click', () => {
-    loadWorkspaceSession();
-  });
+  if (els.workspaceActionDisconnect) {
+    els.workspaceActionDisconnect.addEventListener('click', async () => {
+      const tab = getCurrentTab();
+      await window.terminal.disconnectSSH(tab && tab.sessionId ? { sessionId: tab.sessionId } : undefined);
+      if (tab && tab.type === 'ssh') {
+        tab.sessionId = '';
+      }
+      reconnectStateActive = false;
+      term.options.disableStdin = false;
+      showQuickReconnect(false);
+      setStatus(lr('SSH已断开，已切回本地', 'SSH disconnected, switched to local'), 'info');
+      term.focus();
+    });
+  }
+  if (els.workspaceActionSaveSession) {
+    els.workspaceActionSaveSession.addEventListener('click', saveWorkspaceSession);
+  }
+  if (els.workspaceActionLoadSession) {
+    els.workspaceActionLoadSession.addEventListener('click', () => {
+      loadWorkspaceSession();
+    });
+  }
   els.navTerminal.addEventListener('click', () => {
     setActiveNav('nav-terminal');
     showWorkspaceView('terminal');
@@ -3745,6 +3826,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     applyR2RSplitRatio(r2rSplitRatio);
   });
   window.addEventListener('keydown', (event) => {
+    if (event.defaultPrevented) return;
+    if (handleTabSwitchShortcut(event)) return;
     if (event.key !== 'Escape') return;
     const closed = closeActiveOverlayByEsc();
     if (closed) {

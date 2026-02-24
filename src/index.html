@@ -130,7 +130,7 @@
             display: flex;
             gap: 8px;
             align-items: center;
-            flex-wrap: nowrap;
+            flex-wrap: wrap;
             padding: 10px;
             border-bottom: 1px solid #2d2d2d;
             background: #252526;
@@ -167,6 +167,12 @@
         }
         #legacy-actions {
             display: none;
+        }
+        #toolbar > #workspace-secondary-actions {
+            width: 100%;
+            padding: 0;
+            border-bottom: 0;
+            background: transparent;
         }
         #btn-quick-reconnect {
             height: 28px;
@@ -242,6 +248,22 @@
             gap: 6px;
             flex: 1;
             min-width: 0;
+        }
+        #btn-local {
+            height: 28px;
+            min-width: 28px;
+            border: 1px solid #3a3a3a;
+            background: #2a2a2a;
+            color: #d4d4d4;
+            border-radius: 6px;
+            padding: 0 9px;
+            font-size: 16px;
+            line-height: 1;
+            cursor: pointer;
+            flex: 0 0 auto;
+        }
+        #btn-local:hover {
+            background: #37373d;
         }
         .tab-item {
             height: 28px;
@@ -1093,8 +1115,15 @@
             <div id="toolbar-brand">Smart-Term</div>
             <div id="status">初始化中...</div>
             <button id="btn-quick-reconnect">快速重连</button>
+            <div id="workspace-secondary-actions">
+                <button id="workspace-action-open-ssh" data-views="terminal,transfer,history,settings">新建SSH连接</button>
+                <button id="workspace-action-open-connections" data-views="terminal,transfer,history,settings">SSH配置</button>
+                <button id="workspace-action-open-transfer" data-views="terminal,history,settings">打开文件传输</button>
+                <button id="workspace-action-open-history" data-views="terminal,transfer,settings">命令历史</button>
+                <button id="workspace-action-open-audit" data-views="terminal,transfer,history,settings">审计日志</button>
+                <button id="workspace-action-open-settings" data-views="terminal,transfer,history">设置</button>
+            </div>
             <div id="legacy-actions">
-                <button id="btn-local">新建本地标签</button>
                 <button id="btn-open-ssh">新建SSH标签</button>
                 <button id="btn-disconnect-ssh">断开SSH</button>
                 <button id="btn-open-r2r">R2R拖拽</button>
@@ -1140,24 +1169,14 @@
             <div id="workspace">
                 <div id="workspace-view-header">
                     <div>
-                        <div id="workspace-view-title">终端</div>
-                        <div id="workspace-view-subtitle">多标签终端，支持本地与SSH会话</div>
+                        <div id="workspace-view-title"></div>
+                        <div id="workspace-view-subtitle"></div>
                     </div>
                     <button id="workspace-primary-action">新建本地标签</button>
                 </div>
-                <div id="workspace-secondary-actions">
-                    <button id="workspace-action-open-ssh" data-views="terminal,transfer,history,settings">新建SSH连接</button>
-                    <button id="workspace-action-open-connections" data-views="terminal,transfer,history,settings">SSH配置</button>
-                    <button id="workspace-action-open-transfer" data-views="terminal,history,settings">打开文件传输</button>
-                    <button id="workspace-action-open-history" data-views="terminal,transfer,settings">命令历史</button>
-                    <button id="workspace-action-open-audit" data-views="terminal,transfer,history,settings">审计日志</button>
-                    <button id="workspace-action-open-settings" data-views="terminal,transfer,history">设置</button>
-                    <button id="workspace-action-disconnect" data-views="terminal,transfer,history,settings">断开SSH</button>
-                    <button id="workspace-action-save-session" data-views="terminal">保存会话</button>
-                    <button id="workspace-action-load-session" data-views="terminal">恢复会话</button>
-                </div>
                 <div id="tabs-bar">
                     <div id="tabs-list"></div>
+                    <button id="btn-local" title="新建本地标签">+</button>
                 </div>
                 <div id="terminal-container">
                     <div id="terminal"></div>
