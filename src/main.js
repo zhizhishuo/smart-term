@@ -390,7 +390,7 @@ function ensureLocalPty() {
     localPty.onData((data) => {
       probeCwdFromOutput('local', data);
       if (activeMode === 'local') {
-        emitToRenderer('terminal:data', data);
+        emitToRenderer('terminal:data', { data, mode: 'local' });
       }
     });
 
@@ -731,7 +731,11 @@ function connectSSH(config, opts = {}) {
           stream.on('data', (data) => {
             probeCwdFromOutput('ssh', data.toString('utf8'));
             if (activeMode === 'ssh' && activeSshSessionId === sessionId) {
-              emitToRenderer('terminal:data', data.toString('utf8'));
+              emitToRenderer('terminal:data', {
+                data: data.toString('utf8'),
+                mode: 'ssh',
+                sessionId
+              });
             }
           });
 
@@ -1738,9 +1742,13 @@ ipcMain.handle('terminal:get-state', () => {
 });
 
 ipcMain.handle('terminal:activate-ssh', (_event, payload) => {
-  const bySessionId = payload && payload.sessionId ? sshSessions.get(String(payload.sessionId)) : null;
+  const requestedId = payload && payload.sessionId ? String(payload.sessionId) : '';
+  if (!requestedId) {
+    return { ok: false, error: 'missing-ssh-session-id' };
+  }
+  const bySessionId = sshSessions.get(requestedId);
   if (bySessionId) {
-    activeSshSessionId = String(payload.sessionId);
+    activeSshSessionId = requestedId;
     activeMode = 'ssh';
     emitToRenderer('terminal:cwd', { mode: 'ssh', cwd: modeCwd.ssh || '' });
     return {
@@ -1750,25 +1758,7 @@ ipcMain.handle('terminal:activate-ssh', (_event, payload) => {
       target: normalizeSshTarget(bySessionId.config || {})
     };
   }
-  const expected = normalizeSshTarget(payload || {});
-  if (!expected) {
-    return { ok: false, error: 'no-active-ssh-session' };
-  }
-  const matchedEntry = Array.from(sshSessions.entries()).find(([, session]) => {
-    return isSameSshTarget(session && session.config ? session.config : null, expected);
-  });
-  if (!matchedEntry) {
-    return { ok: false, error: 'no-active-ssh-session' };
-  }
-  activeSshSessionId = matchedEntry[0];
-  activeMode = 'ssh';
-  emitToRenderer('terminal:cwd', { mode: 'ssh', cwd: modeCwd.ssh || '' });
-  return {
-    ok: true,
-    mode: 'ssh',
-    sessionId: activeSshSessionId,
-    target: normalizeSshTarget(matchedEntry[1].config || {})
-  };
+  return { ok: false, error: 'no-active-ssh-session' };
 });
 
 ipcMain.handle('terminal:get-cwd', () => {

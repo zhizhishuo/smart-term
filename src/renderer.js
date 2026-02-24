@@ -231,6 +231,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   let currentSettings = null;
   let reconnectStateActive = false;
   let reconnectInputWarned = false;
+  const pendingOutputBySessionId = new Map();
+  const sshWarmupBytesBySessionId = new Map();
+  const sshWarmupCarryBySessionId = new Map();
+  const sshWarmupFlushTimerBySessionId = new Map();
+  const SSH_WARMUP_SANITIZE_BYTES = 8192;
   let workspacePrimaryActionHandler = null;
   let editingConfigId = '';
   let connectionFilterQuery = '';
@@ -1585,7 +1590,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     fitAddon.fit();
     const dims = fitAddon.proposeDimensions();
     if (dims && Number.isFinite(dims.cols) && Number.isFinite(dims.rows) && dims.cols > 0 && dims.rows > 0) {
-      window.terminal.resize(dims.cols, dims.rows);
+      // Guard against transient tiny dimensions during layout switches.
+      const cols = Math.max(20, Math.floor(dims.cols));
+      const rows = Math.max(5, Math.floor(dims.rows));
+      window.terminal.resize(cols, rows);
       if (reflow) {
         try {
           term.refresh(0, Math.max(0, term.rows - 1));
@@ -1594,6 +1602,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
     }
+  }
+
+  function syncTerminalSizeStable(reflow = false) {
+    syncTerminalSizeToBackend(reflow);
+    requestAnimationFrame(() => syncTerminalSizeToBackend(reflow));
+    setTimeout(() => syncTerminalSizeToBackend(reflow), 60);
+    setTimeout(() => syncTerminalSizeToBackend(reflow), 180);
   }
 
   function showTransferProgress(title) {
@@ -1732,6 +1747,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       ...tab,
       outputBuffer: typeof tab.outputBuffer === 'string' ? tab.outputBuffer : ''
     };
+    if (normalized.type === 'ssh' && normalized.sessionId) {
+      const sid = String(normalized.sessionId || '');
+      const pending = pendingOutputBySessionId.get(sid);
+      if (pending) {
+        normalized.outputBuffer = trimTerminalBuffer(`${normalized.outputBuffer}${pending}`);
+        pendingOutputBySessionId.delete(sid);
+      }
+    }
     tabs.push(normalized);
     renderTabs();
   }
@@ -1742,10 +1765,172 @@ document.addEventListener('DOMContentLoaded', async () => {
     return text.length > limit ? text.slice(-limit) : text;
   }
 
-  function appendOutputToCurrentTab(data) {
-    const tab = getCurrentTab();
+  function appendOutputToTab(tab, data) {
     if (!tab) return;
     tab.outputBuffer = trimTerminalBuffer(`${tab.outputBuffer || ''}${String(data || '')}`);
+  }
+
+  function markSshSessionWarmup(sessionId) {
+    const sid = String(sessionId || '');
+    if (!sid) return;
+    const prevTimer = sshWarmupFlushTimerBySessionId.get(sid);
+    if (prevTimer) {
+      clearTimeout(prevTimer);
+      sshWarmupFlushTimerBySessionId.delete(sid);
+    }
+    sshWarmupBytesBySessionId.set(sid, SSH_WARMUP_SANITIZE_BYTES);
+    sshWarmupCarryBySessionId.delete(sid);
+  }
+
+  function sanitizeSshLoginArtifactChunk(text) {
+    const source = String(text || '');
+    if (!source) return source;
+    let out = source;
+    // SSH welcome text can be chunk-split, leaving "prompt + time tail" artifacts.
+    // Match by line shape (not prompt style) so ANSI-colored prompts are handled too.
+    out = out.replace(
+      /(^|[\r\n])([^\r\n]*[#$])\s+\d{1,2}\s\d{2}:\d{2}:\d{2}\s\d{4}\sfrom [^\r\n]*/g,
+      '$1$2'
+    );
+    out = out.replace(
+      /(^|[\r\n])\s*\d{1,2}\s\d{2}:\d{2}:\d{2}\s\d{4}\sfrom [^\r\n]*(?=$|[\r\n])/g,
+      '$1'
+    );
+    return out;
+  }
+
+  function sanitizeSshOutputAlways(text) {
+    const source = String(text || '');
+    if (!source) return source;
+    let out = source;
+    // Hard filter: remove "DD HH:MM:SS YYYY from x.x.x.x" artifact lines in SSH output.
+    out = out.replace(
+      /(^|[\r\n])([^\r\n]*[#$])\s+\d{1,2}\s\d{2}:\d{2}:\d{2}\s\d{4}\sfrom [^\r\n]*/g,
+      '$1$2'
+    );
+    out = out.replace(
+      /(^|[\r\n])\s*\d{1,2}\s\d{2}:\d{2}:\d{2}\s\d{4}\sfrom [^\r\n]*(?=$|[\r\n])/g,
+      '$1'
+    );
+    return out;
+  }
+
+  function sanitizeSshWarmupStreamChunk(sessionId, text, isFinalChunk = false) {
+    const sid = String(sessionId || '');
+    const chunk = String(text || '');
+    if (!sid) return chunk;
+    const prev = sshWarmupCarryBySessionId.get(sid) || '';
+    if (!chunk && !isFinalChunk) return '';
+    if (!chunk && isFinalChunk) {
+      sshWarmupCarryBySessionId.delete(sid);
+      return prev ? sanitizeSshLoginArtifactChunk(prev) : '';
+    }
+    const merged = `${prev}${chunk}`;
+    if (isFinalChunk) {
+      sshWarmupCarryBySessionId.delete(sid);
+      return sanitizeSshLoginArtifactChunk(merged);
+    }
+    const lastBreak = Math.max(merged.lastIndexOf('\n'), merged.lastIndexOf('\r'));
+    if (lastBreak < 0) {
+      sshWarmupCarryBySessionId.set(sid, merged.slice(-512));
+      return '';
+    }
+    const processText = merged.slice(0, lastBreak + 1);
+    const tail = merged.slice(lastBreak + 1);
+    sshWarmupCarryBySessionId.set(sid, tail.slice(-512));
+    return sanitizeSshLoginArtifactChunk(processText);
+  }
+
+  function scheduleSshWarmupCarryFlush(sessionId) {
+    const sid = String(sessionId || '');
+    if (!sid) return;
+    const prevTimer = sshWarmupFlushTimerBySessionId.get(sid);
+    if (prevTimer) {
+      clearTimeout(prevTimer);
+    }
+    const timer = setTimeout(() => {
+      sshWarmupFlushTimerBySessionId.delete(sid);
+      const carry = sanitizeSshWarmupStreamChunk(sid, '', true);
+      if (!carry) return;
+      const tab = tabs.find((t) => t.type === 'ssh' && String(t.sessionId || '') === sid) || null;
+      if (!tab) {
+        const existing = pendingOutputBySessionId.get(sid) || '';
+        pendingOutputBySessionId.set(sid, trimTerminalBuffer(`${existing}${carry}`));
+        return;
+      }
+      appendOutputToTab(tab, carry);
+      const current = getCurrentTab();
+      if (current && current.id === tab.id) {
+        term.write(carry);
+      }
+    }, 60);
+    sshWarmupFlushTimerBySessionId.set(sid, timer);
+  }
+
+  function takePendingOutputForSessionId(sessionId) {
+    const sid = String(sessionId || '');
+    if (!sid) return '';
+    const pending = pendingOutputBySessionId.get(sid) || '';
+    if (pending) {
+      pendingOutputBySessionId.delete(sid);
+    }
+    return pending;
+  }
+
+  function flushPendingOutputToTabBySessionId(tab, sessionId) {
+    if (!tab) return;
+    markSshSessionWarmup(sessionId);
+    const pending = takePendingOutputForSessionId(sessionId);
+    if (!pending) return;
+    appendOutputToTab(tab, pending);
+    const current = getCurrentTab();
+    if (current && current.id === tab.id) {
+      term.write(pending);
+    }
+  }
+
+  function normalizeIncomingTerminalData(payload) {
+    if (payload && typeof payload === 'object' && Object.prototype.hasOwnProperty.call(payload, 'data')) {
+      return {
+        data: String(payload.data || ''),
+        mode: payload.mode === 'ssh' ? 'ssh' : (payload.mode === 'local' ? 'local' : ''),
+        sessionId: String(payload.sessionId || '')
+      };
+    }
+    return {
+      data: String(payload || ''),
+      mode: '',
+      sessionId: ''
+    };
+  }
+
+  function findTabForIncomingOutput(incoming) {
+    if (!incoming || !incoming.data) return null;
+    if (incoming.mode === 'ssh') {
+      if (!incoming.sessionId) return getCurrentTab();
+      return tabs.find((t) => t.type === 'ssh' && String(t.sessionId || '') === incoming.sessionId) || null;
+    }
+    if (incoming.mode === 'local') {
+      const current = getCurrentTab();
+      if (current && current.type === 'local') return current;
+      return tabs.find((t) => t.type === 'local') || null;
+    }
+    return getCurrentTab();
+  }
+
+  function shouldRenderIncomingOutput(incoming, targetTab) {
+    const current = getCurrentTab();
+    if (!current || !targetTab) return false;
+    if (current.id !== targetTab.id) return false;
+    if (incoming.mode === 'ssh') {
+      return current.type === 'ssh'
+        && String(current.sessionId || '') !== ''
+        && String(current.sessionId || '') === String(incoming.sessionId || '');
+    }
+    if (incoming.mode === 'local') {
+      return current.type === 'local';
+    }
+    return true;
   }
 
   function restoreTabOutput(tab) {
@@ -1795,6 +1980,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     terminalShellState.inputLineBuffer = '';
 
     restoreTabOutput(tab);
+    syncTerminalSizeStable(true);
 
     if (tab.type === 'local') {
       const result = await window.terminal.startLocal();
@@ -1802,6 +1988,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         setStatus(lr('切换本地标签失败', 'Failed to switch local tab'), 'error');
         return;
       }
+      syncTerminalSizeStable(true);
       setStatus(lr(`当前标签: ${tab.title}`, `Current tab: ${tab.title}`), 'success');
       return;
     }
@@ -1812,6 +1999,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const fast = await window.terminal.activateSSH({ ...target, sessionId: tab.sessionId || '' });
         if (fast && fast.ok) {
           tab.sessionId = fast.sessionId || tab.sessionId || '';
+          markSshSessionWarmup(tab.sessionId);
+          flushPendingOutputToTabBySessionId(tab, tab.sessionId);
+          syncTerminalSizeStable(true);
           setStatus(lr(
             `已切回 ${target.username}@${target.host}`,
             `Switched back to ${target.username}@${target.host}`
@@ -1824,6 +2014,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (result && result.ok) {
           restoreTabOutput(tab);
           tab.sessionId = result.sessionId || tab.sessionId || '';
+          markSshSessionWarmup(tab.sessionId);
+          flushPendingOutputToTabBySessionId(tab, tab.sessionId);
+          syncTerminalSizeStable(true);
           setStatus(lr(
             `已连接 ${tab.lastConnectPayload.username}@${tab.lastConnectPayload.host}`,
             `Connected ${tab.lastConnectPayload.username}@${tab.lastConnectPayload.host}`
@@ -2318,6 +2511,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     createTab(newTab);
     currentTabId = newTab.id;
     renderTabs();
+    await switchToTab(currentTabId);
+    syncTerminalSizeStable(true);
     setActiveNav('nav-terminal');
     showWorkspaceView('terminal');
     setStatus(lr(
@@ -2825,6 +3020,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     delete tabPayload.password;
     delete tabPayload.privateKey;
 
+    let createdNewSshTab = false;
     if (pendingTabForConnect) {
       const tab = tabs.find((t) => t.id === pendingTabForConnect);
       if (tab) {
@@ -2839,6 +3035,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
         tab.lastConnectPayload = payload;
         tab.sessionId = result.sessionId || tab.sessionId || '';
+        markSshSessionWarmup(tab.sessionId);
+        flushPendingOutputToTabBySessionId(tab, tab.sessionId);
         currentTabId = tab.id;
       }
       pendingTabForConnect = null;
@@ -2858,10 +3056,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         sessionId: result.sessionId || '',
         outputBuffer: ''
       };
+      markSshSessionWarmup(newTab.sessionId);
       createTab(newTab);
       currentTabId = newTab.id;
+      createdNewSshTab = true;
     }
     renderTabs();
+    await switchToTab(currentTabId);
+    if (createdNewSshTab) {
+      syncTerminalSizeStable(true);
+    }
 
     closeModal();
     setStatus(lr(
@@ -2902,9 +3106,64 @@ document.addEventListener('DOMContentLoaded', async () => {
     return true;
   });
 
-  window.terminal.onData((data) => {
-    appendOutputToCurrentTab(data);
-    term.write(data);
+  window.terminal.onData((payload) => {
+    const incoming = normalizeIncomingTerminalData(payload);
+    if (incoming.mode === 'ssh' && incoming.data) {
+      incoming.data = sanitizeSshOutputAlways(incoming.data);
+    }
+    const targetTab = findTabForIncomingOutput(incoming);
+    if (incoming.mode === 'ssh' && incoming.sessionId) {
+      const sid = String(incoming.sessionId || '');
+      if (!sshWarmupBytesBySessionId.has(sid)) {
+        // If data arrives before tab/session binding is complete, still enable warmup sanitize.
+        markSshSessionWarmup(sid);
+      }
+      const remaining = sshWarmupBytesBySessionId.get(sid) || 0;
+      if (remaining > 0) {
+        const rawLen = String(payload && payload.data ? payload.data : incoming.data).length;
+        const next = Math.max(0, remaining - rawLen);
+        incoming.data = sanitizeSshWarmupStreamChunk(sid, incoming.data, next <= 0);
+        if (next > 0) {
+          sshWarmupBytesBySessionId.set(sid, next);
+          scheduleSshWarmupCarryFlush(sid);
+        } else {
+          const flushTimer = sshWarmupFlushTimerBySessionId.get(sid);
+          if (flushTimer) {
+            clearTimeout(flushTimer);
+            sshWarmupFlushTimerBySessionId.delete(sid);
+          }
+          sshWarmupBytesBySessionId.delete(sid);
+          // Flush any buffered tail when warmup sanitize window ends.
+          const tail = sanitizeSshWarmupStreamChunk(sid, '', true);
+          if (tail) {
+            incoming.data = `${incoming.data}${tail}`;
+          }
+        }
+      }
+    }
+    if (incoming.mode === 'ssh' && incoming.sessionId) {
+      const early = takePendingOutputForSessionId(incoming.sessionId);
+      if (early) {
+        const earlyTab = tabs.find((t) => t.type === 'ssh' && String(t.sessionId || '') === incoming.sessionId) || null;
+        const warmupRemaining = sshWarmupBytesBySessionId.get(String(incoming.sessionId || '')) || 0;
+        const earlyText = warmupRemaining > 0 ? sanitizeSshLoginArtifactChunk(early) : early;
+        appendOutputToTab(earlyTab, earlyText);
+        const current = getCurrentTab();
+        if (earlyTab && current && current.id === earlyTab.id) {
+          term.write(earlyText);
+        }
+      }
+    }
+    if (!targetTab && incoming.mode === 'ssh' && incoming.sessionId) {
+      const sid = String(incoming.sessionId || '');
+      const existing = pendingOutputBySessionId.get(sid) || '';
+      pendingOutputBySessionId.set(sid, trimTerminalBuffer(`${existing}${incoming.data}`));
+      return;
+    }
+    appendOutputToTab(targetTab, incoming.data);
+    if (shouldRenderIncomingOutput(incoming, targetTab)) {
+      term.write(incoming.data);
+    }
   });
   window.terminal.onCwd((payload) => {
     if (!payload || typeof payload !== 'object') return;
@@ -3476,6 +3735,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     tab.sessionId = result.sessionId || '';
+    markSshSessionWarmup(tab.sessionId);
+    flushPendingOutputToTabBySessionId(tab, tab.sessionId);
     setStatus(lr('快速重连成功', 'Quick reconnect succeeded'), 'success');
   });
 
