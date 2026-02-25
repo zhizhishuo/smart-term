@@ -1540,8 +1540,53 @@ document.addEventListener('DOMContentLoaded', async () => {
     );
   }
 
+  function runCommandFromPalette(command) {
+    const cmd = String(command || '').trim();
+    if (!cmd) return;
+    setActiveNav('nav-terminal');
+    showWorkspaceView('terminal');
+    term.focus();
+    window.terminal.write(cmd);
+    window.terminal.write('\r');
+  }
+
   function buildCommandPaletteActions() {
-    const actions = [
+    const actions = [];
+
+    const recentCommands = (terminalShellState.historyCommands || [])
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+      .slice(0, 8);
+    recentCommands.forEach((cmd, idx) => {
+      actions.push({
+        id: `recent-cmd-${idx}`,
+        label: lr(`最近命令: ${cmd}`, `Recent command: ${cmd}`),
+        keywords: `recent command history ${cmd}`,
+        run: () => runCommandFromPalette(cmd)
+      });
+    });
+
+    const recentConnections = (cachedConfigs || [])
+      .filter((item) => item && item.host && item.username)
+      .slice(0, 8);
+    recentConnections.forEach((config) => {
+      const host = String(config.host || '');
+      const user = String(config.username || '');
+      const title = String(config.name || `${user}@${host}`);
+      actions.push({
+        id: `recent-ssh-${config.id}`,
+        label: lr(`最近连接: ${title}`, `Recent connection: ${title}`),
+        keywords: `recent ssh ${title} ${host} ${user}`,
+        run: async () => {
+          setActiveNav('nav-connections');
+          showWorkspaceView('connections');
+          await loadConnectionEditorFromConfig(config);
+          await connectFromConnectionEditor();
+        }
+      });
+    });
+
+    actions.push(...[
       {
         id: 'new-local',
         label: lr('新建本地标签', 'New local tab'),
@@ -1606,7 +1651,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           toggleMonitorVisibility();
         }
       }
-    ];
+    ]);
 
     tabs.forEach((tab, idx) => {
       const type = tab.type === 'ssh' ? 'SSH' : 'Local';
@@ -1673,6 +1718,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   function openCommandPalette(initialQuery = '') {
     if (!els.commandPalette || !els.commandPaletteInput) return;
     updateCommandPaletteI18n();
+    void ensureCommandHistoryCache().then(() => {
+      if (isCommandPaletteOpen()) {
+        renderCommandPalette(els.commandPaletteInput ? els.commandPaletteInput.value : '');
+      }
+    });
+    if (!cachedConfigs.length) {
+      void refreshSavedConfigs().then(() => {
+        if (isCommandPaletteOpen()) {
+          renderCommandPalette(els.commandPaletteInput ? els.commandPaletteInput.value : '');
+        }
+      });
+    }
     commandPaletteActiveIndex = 0;
     els.commandPalette.classList.add('show');
     els.commandPaletteInput.value = String(initialQuery || '');
@@ -1702,7 +1759,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const action = commandPaletteResults[commandPaletteActiveIndex];
     if (!action || typeof action.run !== 'function') return;
     closeCommandPalette();
-    action.run();
+    Promise.resolve(action.run()).catch((err) => {
+      setStatus(lr(
+        `命令执行失败: ${String(err && err.message ? err.message : err)}`,
+        `Command failed: ${String(err && err.message ? err.message : err)}`
+      ), 'error');
+    });
   }
 
   function isCommandPaletteShortcut(event) {
