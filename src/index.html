@@ -914,6 +914,84 @@
         #transfer-progress-retry:hover {
             background: #37373d;
         }
+        #command-palette {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.45);
+            display: none;
+            align-items: flex-start;
+            justify-content: center;
+            padding-top: 10vh;
+            z-index: 90;
+        }
+        #command-palette.show {
+            display: flex;
+        }
+        #command-palette-card {
+            width: min(720px, 92vw);
+            max-height: min(72vh, 560px);
+            border: 1px solid #3a3a3a;
+            border-radius: 10px;
+            background: #1f1f1f;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        #command-palette-input {
+            height: 36px;
+            border: 1px solid #3a3a3a;
+            border-radius: 8px;
+            background: #151515;
+            color: #d4d4d4;
+            padding: 0 10px;
+            font-size: 13px;
+            outline: none;
+        }
+        #command-palette-input:focus {
+            border-color: #4fc1ff;
+            box-shadow: 0 0 0 2px rgba(79, 193, 255, 0.15);
+        }
+        #command-palette-list {
+            border: 1px solid #333;
+            border-radius: 8px;
+            background: #171717;
+            overflow: auto;
+            max-height: min(60vh, 470px);
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            padding: 4px;
+        }
+        .command-palette-item {
+            height: 34px;
+            border: 0;
+            background: transparent;
+            color: #d4d4d4;
+            border-radius: 6px;
+            text-align: left;
+            font-size: 12px;
+            padding: 0 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .command-palette-item:hover,
+        .command-palette-item.active {
+            background: #2a2a2a;
+        }
+        .command-palette-empty {
+            color: #8f8f8f;
+            font-size: 12px;
+            padding: 10px;
+        }
+        .command-palette-kbd {
+            color: #8f8f8f;
+            font-size: 11px;
+        }
         #history-modal {
             position: fixed;
             inset: 0;
@@ -1580,6 +1658,13 @@
                 <button id="btn-cancel-ssh">取消</button>
                 <button id="btn-connect-ssh">连接</button>
             </div>
+        </div>
+    </div>
+
+    <div id="command-palette">
+        <div id="command-palette-card">
+            <input id="command-palette-input" type="text" placeholder="输入命令（如: 新建SSH / 切换标签）">
+            <div id="command-palette-list"></div>
         </div>
     </div>
     

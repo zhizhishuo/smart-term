@@ -203,7 +203,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     memBar: document.getElementById('mem-bar'),
     diskLine: document.getElementById('disk-line'),
     diskLine2: document.getElementById('disk-line2'),
-    diskBar: document.getElementById('disk-bar')
+    diskBar: document.getElementById('disk-bar'),
+    commandPalette: document.getElementById('command-palette'),
+    commandPaletteInput: document.getElementById('command-palette-input'),
+    commandPaletteList: document.getElementById('command-palette-list')
   };
 
   let cachedConfigs = [];
@@ -242,6 +245,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   let connectionFilterQuery = '';
   let connectionSortMode = 'name-asc';
   let currentLocale = 'zh-CN';
+  let commandPaletteResults = [];
+  let commandPaletteActiveIndex = 0;
   const TERM_THEME_DARK = {
     background: '#1e1e1e',
     foreground: '#d4d4d4',
@@ -833,6 +838,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderR2RQuickNav('right');
     setupJumpConfigOptions(editingConfigId || (els.savedSelect ? els.savedSelect.value : ''), els.connJumpConfig ? els.connJumpConfig.value : '');
     setupSshModalJumpOptions(els.inputJumpConfig ? els.inputJumpConfig.value : '');
+    updateCommandPaletteI18n();
+    if (isCommandPaletteOpen()) {
+      renderCommandPalette(els.commandPaletteInput ? els.commandPaletteInput.value : '');
+    }
   }
 
   function loadR2RDirPrefs() {
@@ -1519,7 +1528,197 @@ document.addEventListener('DOMContentLoaded', async () => {
     els.workspaceViewSubtitle.textContent = '';
   }
 
+  function isCommandPaletteOpen() {
+    return !!(els.commandPalette && els.commandPalette.classList.contains('show'));
+  }
+
+  function updateCommandPaletteI18n() {
+    if (!els.commandPaletteInput) return;
+    els.commandPaletteInput.placeholder = lr(
+      '输入命令（如: 新建SSH / 切换标签）',
+      'Type a command (e.g. New SSH / Switch Tab)'
+    );
+  }
+
+  function buildCommandPaletteActions() {
+    const actions = [
+      {
+        id: 'new-local',
+        label: lr('新建本地标签', 'New local tab'),
+        keywords: 'local tab new',
+        shortcut: currentLocale === 'en-US' ? 'Cmd/Ctrl+K' : 'Cmd/Ctrl+K',
+        run: () => els.btnLocal && els.btnLocal.click()
+      },
+      {
+        id: 'new-ssh',
+        label: lr('新建SSH连接', 'New SSH connection'),
+        keywords: 'ssh connect new',
+        run: () => {
+          if (els.workspaceActionOpenSsh) {
+            els.workspaceActionOpenSsh.click();
+          } else {
+            pendingTabForConnect = null;
+            openModal();
+          }
+        }
+      },
+      {
+        id: 'open-connections',
+        label: lr('打开SSH配置', 'Open SSH configs'),
+        keywords: 'ssh configs connections',
+        run: () => {
+          setActiveNav('nav-connections');
+          showWorkspaceView('connections');
+        }
+      },
+      {
+        id: 'open-transfer',
+        label: lr('打开文件传输', 'Open file transfer'),
+        keywords: 'transfer sftp',
+        run: () => {
+          setActiveNav('nav-transfer');
+          showWorkspaceView('transfer');
+        }
+      },
+      {
+        id: 'open-history',
+        label: lr('打开命令历史', 'Open command history'),
+        keywords: 'history command',
+        run: () => {
+          setActiveNav('nav-history');
+          openHistoryModal();
+        }
+      },
+      {
+        id: 'open-settings',
+        label: lr('打开设置', 'Open settings'),
+        keywords: 'settings',
+        run: () => {
+          setActiveNav('nav-settings');
+          openSettingsModal();
+        }
+      },
+      {
+        id: 'toggle-monitor',
+        label: lr('切换监控显示/隐藏', 'Toggle monitor visibility'),
+        keywords: 'monitor sidebar',
+        run: () => {
+          toggleMonitorVisibility();
+        }
+      }
+    ];
+
+    tabs.forEach((tab, idx) => {
+      const type = tab.type === 'ssh' ? 'SSH' : 'Local';
+      actions.push({
+        id: `switch-tab-${tab.id}`,
+        label: lr(
+          `切换到标签 ${idx + 1}: ${tab.title || tab.id}`,
+          `Switch to tab ${idx + 1}: ${tab.title || tab.id}`
+        ),
+        keywords: `tab switch ${type} ${tab.title || tab.id} ${idx + 1}`,
+        shortcut: idx < 9 ? `${navigator.platform.includes('Mac') ? 'Cmd' : 'Ctrl'}+${idx + 1}` : '',
+        run: () => switchToTab(tab.id)
+      });
+    });
+
+    return actions;
+  }
+
+  function renderCommandPalette(query = '') {
+    if (!els.commandPaletteList) return;
+    const q = String(query || '').trim().toLowerCase();
+    const allActions = buildCommandPaletteActions();
+    const filtered = !q
+      ? allActions
+      : allActions.filter((item) => {
+          const hay = `${item.label} ${item.keywords || ''}`.toLowerCase();
+          return hay.includes(q);
+        });
+    commandPaletteResults = filtered.slice(0, 100);
+    if (commandPaletteResults.length === 0) {
+      commandPaletteActiveIndex = 0;
+      const empty = document.createElement('div');
+      empty.className = 'command-palette-empty';
+      empty.textContent = lr('未找到匹配命令', 'No matching commands');
+      els.commandPaletteList.innerHTML = '';
+      els.commandPaletteList.appendChild(empty);
+      return;
+    }
+    commandPaletteActiveIndex = Math.max(0, Math.min(commandPaletteActiveIndex, commandPaletteResults.length - 1));
+    els.commandPaletteList.innerHTML = '';
+    commandPaletteResults.forEach((item, idx) => {
+      const btn = document.createElement('button');
+      btn.className = `command-palette-item ${idx === commandPaletteActiveIndex ? 'active' : ''}`;
+      btn.type = 'button';
+      const left = document.createElement('span');
+      left.textContent = item.label;
+      const right = document.createElement('span');
+      right.className = 'command-palette-kbd';
+      right.textContent = item.shortcut || '';
+      btn.appendChild(left);
+      btn.appendChild(right);
+      btn.addEventListener('click', () => {
+        commandPaletteActiveIndex = idx;
+        executeCommandPaletteSelection();
+      });
+      els.commandPaletteList.appendChild(btn);
+    });
+    const activeNode = els.commandPaletteList.querySelector('.command-palette-item.active');
+    if (activeNode && typeof activeNode.scrollIntoView === 'function') {
+      activeNode.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function openCommandPalette(initialQuery = '') {
+    if (!els.commandPalette || !els.commandPaletteInput) return;
+    updateCommandPaletteI18n();
+    commandPaletteActiveIndex = 0;
+    els.commandPalette.classList.add('show');
+    els.commandPaletteInput.value = String(initialQuery || '');
+    renderCommandPalette(els.commandPaletteInput.value);
+    setTimeout(() => {
+      els.commandPaletteInput.focus();
+      els.commandPaletteInput.select();
+    }, 0);
+  }
+
+  function closeCommandPalette() {
+    if (!els.commandPalette || !els.commandPaletteInput) return;
+    els.commandPalette.classList.remove('show');
+    els.commandPaletteInput.value = '';
+    commandPaletteResults = [];
+    commandPaletteActiveIndex = 0;
+  }
+
+  function moveCommandPaletteSelection(delta) {
+    if (!isCommandPaletteOpen() || !commandPaletteResults.length) return;
+    const total = commandPaletteResults.length;
+    commandPaletteActiveIndex = ((commandPaletteActiveIndex + Number(delta || 0)) % total + total) % total;
+    renderCommandPalette(els.commandPaletteInput ? els.commandPaletteInput.value : '');
+  }
+
+  function executeCommandPaletteSelection() {
+    const action = commandPaletteResults[commandPaletteActiveIndex];
+    if (!action || typeof action.run !== 'function') return;
+    closeCommandPalette();
+    action.run();
+  }
+
+  function isCommandPaletteShortcut(event) {
+    if (!event || event.type !== 'keydown') return false;
+    const key = String(event.key || '').toLowerCase();
+    const noAlt = !event.altKey;
+    const onlyCtrl = event.ctrlKey && !event.metaKey && noAlt;
+    const onlyMeta = event.metaKey && !event.ctrlKey && noAlt;
+    return (onlyCtrl || onlyMeta) && !event.shiftKey && key === 'k';
+  }
+
   function closeActiveOverlayByEsc() {
+    if (isCommandPaletteOpen()) {
+      closeCommandPalette();
+      return true;
+    }
     if (els.modal.classList.contains('show')) {
       closeModal();
       return true;
@@ -3170,6 +3369,25 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   term.attachCustomKeyEventHandler((event) => {
     if (!event || event.type !== 'keydown') return true;
+    if (isCommandPaletteShortcut(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (isCommandPaletteOpen()) {
+        closeCommandPalette();
+      } else {
+        openCommandPalette();
+      }
+      return false;
+    }
+    if (isCommandPaletteOpen()) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        closeCommandPalette();
+        return false;
+      }
+      return false;
+    }
     if (handleTabSwitchShortcut(event)) return false;
     const onlyAlt = event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
     if (!onlyAlt) return true;
@@ -3358,6 +3576,40 @@ document.addEventListener('DOMContentLoaded', async () => {
   els.btnCancelSsh.addEventListener('click', closeModal);
   els.btnConnectSsh.addEventListener('click', connectSSHFromForm);
   els.authType.addEventListener('change', refreshAuthFields);
+  if (els.commandPaletteInput) {
+    els.commandPaletteInput.addEventListener('input', () => {
+      commandPaletteActiveIndex = 0;
+      renderCommandPalette(els.commandPaletteInput.value);
+    });
+    els.commandPaletteInput.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        moveCommandPaletteSelection(1);
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        moveCommandPaletteSelection(-1);
+        return;
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        executeCommandPaletteSelection();
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeCommandPalette();
+      }
+    });
+  }
+  if (els.commandPalette) {
+    els.commandPalette.addEventListener('mousedown', (event) => {
+      if (event.target === els.commandPalette) {
+        closeCommandPalette();
+      }
+    });
+  }
 
   els.btnDisconnectSsh.addEventListener('click', async () => {
     const tab = getCurrentTab();
@@ -3832,6 +4084,33 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   window.addEventListener('keydown', (event) => {
     if (event.defaultPrevented) return;
+    if (isCommandPaletteShortcut(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (isCommandPaletteOpen()) {
+        closeCommandPalette();
+      } else {
+        openCommandPalette();
+      }
+      return;
+    }
+    if (isCommandPaletteOpen()) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        moveCommandPaletteSelection(1);
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        moveCommandPaletteSelection(-1);
+        return;
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        executeCommandPaletteSelection();
+        return;
+      }
+    }
     if (handleTabSwitchShortcut(event)) return;
     if (event.key !== 'Escape') return;
     const closed = closeActiveOverlayByEsc();
