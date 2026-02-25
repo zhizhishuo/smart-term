@@ -12,6 +12,7 @@ It is built with `Electron + xterm.js + node-pty + ssh2` and combines terminal s
 ### Highlights
 
 - Multi-tab terminal for local and SSH sessions
+- Command palette (`Cmd/Ctrl+K`) for quick actions and tab switching
 - Centralized SSH configs (save/edit/delete/deduplicate/quick connect)
 - Jump host (bastion) support
 - Dual-panel file browser for local/remote paths
@@ -19,6 +20,7 @@ It is built with `Electron + xterm.js + node-pty + ssh2` and combines terminal s
 - Recursive directory transfer
 - Transfer queue, failed-item retry, and conflict strategies
 - Transfer recovery after interruption
+- Health monitor switches by active tab mode (local vs remote SSH host)
 - Security: `keytar` secrets, `known_hosts` trust, and audit logs
 
 ### Tech Stack
@@ -55,6 +57,12 @@ npm run build
 ```bash
 npm run check
 ```
+
+### Keyboard Shortcuts
+
+- `Cmd/Ctrl+K`: open/close command palette
+- `Ctrl+Tab` / `Ctrl+Shift+Tab`: next/previous tab
+- `Ctrl/Cmd+1..9`: jump to tab by index
 
 ### Project Structure
 
@@ -127,6 +135,7 @@ Smart-Term 是一个面向开发与运维场景的桌面终端应用。
 ### 核心能力
 
 - 多标签终端，支持本地与 SSH 会话
+- 命令面板（`Cmd/Ctrl+K`），可快速执行常用动作与切换标签
 - 集中式 SSH 配置管理（保存、编辑、删除、去重、快速连接）
 - 支持跳板机（Jump Host）
 - 双面板文件浏览，统一本地/远程操作体验
@@ -134,6 +143,7 @@ Smart-Term 是一个面向开发与运维场景的桌面终端应用。
 - 支持目录递归传输
 - 支持传输队列、失败项重试、冲突策略（覆盖/跳过/重命名）
 - 支持中断任务恢复
+- 健康监控可按当前标签模式切换（本地或 SSH 远程主机）
 - 安全增强：`keytar` 凭据、`known_hosts` 主机信任、审计日志
 
 ### 技术栈
@@ -170,6 +180,12 @@ npm run build
 ```bash
 npm run check
 ```
+
+### 快捷键
+
+- `Cmd/Ctrl+K`：打开/关闭命令面板
+- `Ctrl+Tab` / `Ctrl+Shift+Tab`：切换下一个/上一个标签
+- `Ctrl/Cmd+1..9`：按序号直达标签
 
 ### 项目结构
 
