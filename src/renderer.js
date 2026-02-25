@@ -2385,11 +2385,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function updateSystemMonitor() {
     const info = await window.terminal.getSystemInfo();
     if (!info) return;
-    const sourceLabel = info.source === 'remote'
-      ? lr(`远程 ${info.os && info.os.hostname ? info.os.hostname : ''}`.trim(), `Remote ${info.os && info.os.hostname ? info.os.hostname : ''}`.trim())
-      : info.source === 'local-fallback'
-        ? lr('本地(远程读取失败)', 'Local (remote read failed)')
-        : lr('本地', 'Local');
+    let sourceLabel = lr('本地', 'Local');
+    if (info.source === 'remote') {
+      const tab = getCurrentTab();
+      const targetHost = tab && tab.type === 'ssh'
+        ? String(
+          (tab.sshConfig && tab.sshConfig.host)
+          || (tab.lastConnectPayload && tab.lastConnectPayload.host)
+          || ''
+        ).trim()
+        : '';
+      const remoteHostRaw = String(info.os && info.os.hostname ? info.os.hostname : '').trim();
+      const remoteHostLower = remoteHostRaw.toLowerCase();
+      const fallbackRemoteHost = (remoteHostLower === 'localhost' || remoteHostLower === 'localhost.localdomain')
+        ? ''
+        : remoteHostRaw;
+      const shownHost = targetHost || fallbackRemoteHost || remoteHostRaw || '?';
+      sourceLabel = lr(`远程 ${shownHost}`, `Remote ${shownHost}`);
+    } else if (info.source === 'local-fallback') {
+      sourceLabel = lr('本地(远程读取失败)', 'Local (remote read failed)');
+    }
     const cpuModel = info.cpu && info.cpu.model ? info.cpu.model : 'CPU';
     const cores = Number(info.cpu && info.cpu.cores ? info.cpu.cores : 1);
     const overall = Number(info.cpu && info.cpu.overallPercent ? info.cpu.overallPercent : 0);
