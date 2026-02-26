@@ -119,7 +119,12 @@ function readSettings() {
     sshReconnectMaxAttempts: 6,
     sshReconnectBaseDelayMs: 1500,
     sshKeepaliveIntervalMs: 15000,
-    sshKeepaliveCountMax: 3
+    sshKeepaliveCountMax: 3,
+    aiAutoFixEnabled: false,
+    aiEnabled: true,
+    aiProvider: 'mock',
+    aiModel: 'gpt-4o-mini',
+    aiBaseUrl: ''
   };
   try {
     const p = getSettingsPath();
@@ -202,6 +207,257 @@ function addCommandHistory(command) {
     createdAt: new Date().toISOString()
   });
   writeHistory(history.slice(0, 2000));
+}
+
+function clampText(input, maxLen = 3000) {
+  return String(input || '').slice(0, Math.max(1, Number(maxLen) || 3000));
+}
+
+function stripAnsi(input) {
+  return String(input || '').replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+}
+
+function toRecentCommands(items, maxCount = 3) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item) => clampText(item, 240).trim())
+    .filter(Boolean)
+    .slice(0, Math.max(1, Number(maxCount) || 3));
+}
+
+function detectCommandRisk(command) {
+  const cmd = String(command || '').trim();
+  const tests = [
+    { level: 'high', reason: '包含 rm -rf，可能导致不可恢复删除', pattern: /\brm\s+-rf\b/i },
+    { level: 'high', reason: '包含磁盘/文件系统改写命令', pattern: /\b(mkfs|fdisk|parted|dd)\b/i },
+    { level: 'high', reason: '包含关机或重启命令', pattern: /\b(shutdown|reboot|halt|poweroff)\b/i },
+    { level: 'high', reason: '包含高权限危险操作', pattern: /\bsudo\s+.*\b(rm|mkfs|dd|chmod|chown)\b/i },
+    { level: 'medium', reason: '包含批量权限变更', pattern: /\bchmod\s+-R\b/i },
+    { level: 'medium', reason: '包含递归批量删除', pattern: /\b(find|xargs).*\b(rm)\b/i }
+  ];
+  const hits = tests.filter((item) => item.pattern.test(cmd));
+  const level = hits.some((h) => h.level === 'high')
+    ? 'high'
+    : hits.some((h) => h.level === 'medium') ? 'medium' : 'low';
+  return {
+    level,
+    reasons: hits.map((h) => h.reason),
+    requiresConfirmation: level !== 'low'
+  };
+}
+
+function buildMockCommandSuggestion(goal, context) {
+  const text = String(goal || '').trim();
+  const q = text.toLowerCase();
+  const mode = context && context.mode === 'ssh' ? 'ssh' : 'local';
+  if (!text) {
+    return {
+      command: '',
+      explanation: '请输入明确目标，例如“查看CPU占用前10进程”'
+    };
+  }
+  if (/(内存|memory|ram)/i.test(q)) {
+    return {
+      command: mode === 'ssh'
+        ? 'free -h'
+        : 'ps aux | sort -rk4,4 | head -n 10',
+      explanation: mode === 'ssh'
+        ? '查看远端内存总体使用情况（free -h）。'
+        : '按内存占用排序本地进程并展示前10项（%MEM）。'
+    };
+  }
+  if (/(磁盘|disk|storage|空间|容量|df)/i.test(q)) {
+    return {
+      command: mode === 'ssh'
+        ? 'df -h'
+        : 'df -h',
+      explanation: '查看磁盘使用情况（df -h）。'
+    };
+  }
+  if (/(cpu|资源|占用|load)/i.test(q)) {
+    return {
+      command: mode === 'ssh'
+        ? 'top -b -n 1 | head -n 30'
+        : 'ps aux | sort -rk3,3 | head -n 10',
+      explanation: mode === 'ssh'
+        ? '批量模式查看远端系统资源概览，便于在SSH场景快速诊断。'
+        : '按CPU占用排序本地进程并展示前10项（%CPU）。'
+    };
+  }
+  if (/(日志|log|error|异常|筛查|过滤|grep)/i.test(q)) {
+    return {
+      command: 'journalctl -n 200 --no-pager | grep -Ei "error|fail|warn" | tail -n 60',
+      explanation: '先取最近日志，再筛选常见错误关键词，保留末尾片段便于定位。'
+    };
+  }
+  if (/(批处理|批量|目录|文件|rename|重命名|清理)/i.test(q)) {
+    return {
+      command: 'find . -type f -name "*.log" -mtime +7 -print',
+      explanation: '先仅列出候选文件，避免直接删除；确认后可再执行清理命令。'
+    };
+  }
+  return {
+    command: 'pwd && ls -lah',
+    explanation: '当前目标较泛，先输出目录与文件概览，再逐步细化命令。'
+  };
+}
+
+function buildMockFixSuggestions(command, errorText) {
+  const cmd = String(command || '').trim();
+  const err = stripAnsi(errorText).toLowerCase();
+  if (/command not found|not recognized/.test(err)) {
+    return [
+      { command: `which ${cmd.split(/\s+/)[0] || ''}`.trim(), reason: '确认命令是否已安装并在 PATH 中', risk: detectCommandRisk('which x') },
+      { command: 'echo $PATH', reason: '检查 PATH 配置是否缺失', risk: detectCommandRisk('echo $PATH') },
+      { command: 'uname -a', reason: '确认当前系统环境后再安装对应工具', risk: detectCommandRisk('uname -a') }
+    ];
+  }
+  if (/permission denied|operation not permitted/.test(err)) {
+    return [
+      { command: `ls -l ${cmd.split(/\s+/).slice(-1)[0] || '.'}`.trim(), reason: '先查看目标权限归属', risk: detectCommandRisk('ls -l .') },
+      { command: `sudo ${cmd}`.trim(), reason: '若确需管理员权限可升级执行', risk: detectCommandRisk(`sudo ${cmd}`) },
+      { command: 'id', reason: '确认当前用户身份及组权限', risk: detectCommandRisk('id') }
+    ];
+  }
+  if (/no such file|cannot access/.test(err)) {
+    return [
+      { command: 'pwd', reason: '确认当前目录是否符合预期', risk: detectCommandRisk('pwd') },
+      { command: 'ls -lah', reason: '列出当前目录文件验证路径', risk: detectCommandRisk('ls -lah') },
+      { command: cmd.replace(/\s+[^ ]+$/, ''), reason: '先去掉可疑路径参数验证基础命令', risk: detectCommandRisk(cmd.replace(/\s+[^ ]+$/, '')) }
+    ];
+  }
+  return [
+    { command: 'pwd && ls -lah', reason: '先确认执行上下文是否正确', risk: detectCommandRisk('pwd && ls -lah') },
+    { command: cmd, reason: '复核参数后重试原命令', risk: detectCommandRisk(cmd) },
+    { command: 'history | tail -n 20', reason: '检查最近命令链路是否有前置步骤遗漏', risk: detectCommandRisk('history | tail -n 20') }
+  ];
+}
+
+function parseJsonObjectFromText(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch (_err) {
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(text.slice(start, end + 1));
+      } catch (_err2) {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+async function callOpenAICompatible(messages, opts) {
+  const baseUrl = String(opts.baseUrl || '').replace(/\/$/, '');
+  const apiKey = String(opts.apiKey || '');
+  if (!baseUrl || !apiKey || typeof fetch !== 'function') {
+    throw new Error('openai-compatible provider not configured');
+  }
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: opts.model || 'gpt-4o-mini',
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
+      messages
+    })
+  });
+  if (!response.ok) {
+    throw new Error(`provider http ${response.status}`);
+  }
+  const data = await response.json();
+  return String(data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || '');
+}
+
+function buildAiRuntimeConfig() {
+  const settings = readSettings();
+  const provider = String(settings.aiProvider || process.env.SMART_TERM_AI_PROVIDER || 'mock').trim().toLowerCase();
+  const model = String(settings.aiModel || process.env.SMART_TERM_AI_MODEL || 'gpt-4o-mini').trim();
+  const baseUrl = String(
+    settings.aiBaseUrl
+    || process.env.SMART_TERM_AI_BASE_URL
+    || process.env.OPENAI_BASE_URL
+    || 'https://api.openai.com/v1'
+  ).trim();
+  const apiKey = String(
+    process.env.SMART_TERM_AI_API_KEY
+    || process.env.OPENAI_API_KEY
+    || ''
+  ).trim();
+  return { provider, model, baseUrl, apiKey, enabled: settings.aiEnabled !== false };
+}
+
+async function generateCommandByAI(goal, context) {
+  const cfg = buildAiRuntimeConfig();
+  const fallback = buildMockCommandSuggestion(goal, context);
+  if (!cfg.enabled || cfg.provider === 'mock' || !cfg.apiKey) {
+    return { ...fallback, provider: 'mock' };
+  }
+  const prompt = [
+    { role: 'system', content: 'You are a terminal assistant. Return strict JSON: {"command": "...", "explanation": "..."}' },
+    {
+      role: 'user',
+      content: JSON.stringify({
+        goal,
+        mode: context.mode,
+        cwd: context.cwd,
+        recentCommands: context.recentCommands
+      })
+    }
+  ];
+  try {
+    const raw = await callOpenAICompatible(prompt, cfg);
+    const parsed = parseJsonObjectFromText(raw) || {};
+    const command = clampText(parsed.command || fallback.command, 500);
+    const explanation = clampText(parsed.explanation || fallback.explanation, 600);
+    return { command, explanation, provider: cfg.provider };
+  } catch (_err) {
+    return { ...fallback, provider: 'mock' };
+  }
+}
+
+async function suggestFixByAI(command, errorText, context) {
+  const cfg = buildAiRuntimeConfig();
+  const fallback = buildMockFixSuggestions(command, errorText).slice(0, 3);
+  if (!cfg.enabled || cfg.provider === 'mock' || !cfg.apiKey) {
+    return { suggestions: fallback, provider: 'mock' };
+  }
+  const prompt = [
+    { role: 'system', content: 'Return strict JSON: {"suggestions":[{"command":"...","reason":"..."}]}. Max 3 items.' },
+    {
+      role: 'user',
+      content: JSON.stringify({
+        command,
+        errorText,
+        mode: context.mode,
+        cwd: context.cwd,
+        recentCommands: context.recentCommands
+      })
+    }
+  ];
+  try {
+    const raw = await callOpenAICompatible(prompt, cfg);
+    const parsed = parseJsonObjectFromText(raw) || {};
+    const suggestions = Array.isArray(parsed.suggestions)
+      ? parsed.suggestions.slice(0, 3).map((item) => {
+          const cmd = clampText(item && item.command ? item.command : '', 500).trim();
+          const reason = clampText(item && item.reason ? item.reason : '', 400).trim();
+          return { command: cmd, reason: reason || 'AI suggestion', risk: detectCommandRisk(cmd) };
+        }).filter((item) => item.command)
+      : [];
+    return { suggestions: suggestions.length ? suggestions : fallback, provider: cfg.provider };
+  } catch (_err) {
+    return { suggestions: fallback, provider: 'mock' };
+  }
 }
 
 function emitToRenderer(channel, payload) {
@@ -2166,6 +2422,87 @@ ipcMain.handle('settings:save', (_event, patch) => {
   const next = { ...current, ...(patch || {}) };
   writeSettings(next);
   return { ok: true, settings: next };
+});
+
+ipcMain.handle('ai:generate-command', async (_event, payload) => {
+  const goal = clampText(payload && payload.goal ? payload.goal : '', 500).trim();
+  if (!goal) {
+    return { ok: false, error: 'goal is required' };
+  }
+  const mode = payload && payload.mode === 'ssh' ? 'ssh' : activeMode;
+  const cwd = clampText(payload && payload.cwd ? payload.cwd : getActiveModeCwd(), 400);
+  const recentCommands = toRecentCommands(
+    payload && Array.isArray(payload.recentCommands)
+      ? payload.recentCommands
+      : readHistory().slice(0, 3).map((item) => item && item.command ? item.command : '')
+  );
+  const context = { mode, cwd, recentCommands };
+  const suggestion = await generateCommandByAI(goal, context);
+  const risk = detectCommandRisk(suggestion.command || '');
+  const result = {
+    ok: true,
+    goal,
+    command: suggestion.command || '',
+    explanation: suggestion.explanation || '',
+    risk,
+    context,
+    provider: suggestion.provider || 'mock'
+  };
+  appendAuditLog('ai.suggested', {
+    goal,
+    command: result.command,
+    riskLevel: risk.level,
+    mode,
+    cwd,
+    provider: result.provider
+  }, risk.level === 'high' ? 'warn' : 'info');
+  return result;
+});
+
+ipcMain.handle('ai:suggest-fix', async (_event, payload) => {
+  const command = clampText(payload && payload.command ? payload.command : '', 500).trim();
+  const errorText = clampText(payload && payload.errorText ? payload.errorText : '', 1200).trim();
+  if (!command || !errorText) {
+    return { ok: false, error: 'command and errorText are required' };
+  }
+  const mode = payload && payload.mode === 'ssh' ? 'ssh' : activeMode;
+  const cwd = clampText(payload && payload.cwd ? payload.cwd : getActiveModeCwd(), 400);
+  const recentCommands = toRecentCommands(
+    payload && Array.isArray(payload.recentCommands)
+      ? payload.recentCommands
+      : readHistory().slice(0, 3).map((item) => item && item.command ? item.command : '')
+  );
+  const context = { mode, cwd, recentCommands };
+  const generated = await suggestFixByAI(command, errorText, context);
+  const suggestions = (generated.suggestions || []).slice(0, 3).map((item) => ({
+    command: clampText(item && item.command ? item.command : '', 500).trim(),
+    reason: clampText(item && item.reason ? item.reason : '', 400).trim(),
+    risk: item && item.risk ? item.risk : detectCommandRisk(item && item.command ? item.command : '')
+  })).filter((item) => item.command);
+  appendAuditLog('ai.fix_suggested', {
+    command,
+    errorText: clampText(stripAnsi(errorText), 400),
+    suggestionCount: suggestions.length,
+    mode,
+    cwd,
+    provider: generated.provider || 'mock'
+  }, 'info');
+  return { ok: true, suggestions, provider: generated.provider || 'mock' };
+});
+
+ipcMain.handle('ai:log-action', (_event, payload) => {
+  const action = clampText(payload && payload.action ? payload.action : 'unknown', 80);
+  const level = action.includes('execute') ? 'warn' : 'info';
+  appendAuditLog('ai.user_action', {
+    action,
+    goal: clampText(payload && payload.goal ? payload.goal : '', 500),
+    command: clampText(payload && payload.command ? payload.command : '', 500),
+    mode: payload && payload.mode === 'ssh' ? 'ssh' : activeMode,
+    cwd: clampText(payload && payload.cwd ? payload.cwd : getActiveModeCwd(), 400),
+    riskLevel: clampText(payload && payload.riskLevel ? payload.riskLevel : '', 20),
+    provider: clampText(payload && payload.provider ? payload.provider : '', 40)
+  }, level);
+  return { ok: true };
 });
 
 ipcMain.handle('system:get-info', async () => {

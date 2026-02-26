@@ -172,6 +172,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     settingTheme: document.getElementById('setting-theme'),
     settingLanguage: document.getElementById('setting-language'),
     settingShell: document.getElementById('setting-shell'),
+    settingAiAutoFix: document.getElementById('setting-ai-auto-fix'),
     settingSshAutoReconnect: document.getElementById('setting-ssh-auto-reconnect'),
     settingSshRetryMax: document.getElementById('setting-ssh-retry-max'),
     settingSshRetryDelay: document.getElementById('setting-ssh-retry-delay'),
@@ -247,6 +248,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   let currentLocale = 'zh-CN';
   let commandPaletteResults = [];
   let commandPaletteActiveIndex = 0;
+  let commandPaletteLastQuery = '';
+  let aiLastCommandBoundary = null;
+  let aiFixSuggestedBoundaryId = '';
   const TERM_THEME_DARK = {
     background: '#1e1e1e',
     foreground: '#d4d4d4',
@@ -412,6 +416,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       settingThemeLabel: '主题',
       settingLanguageLabel: 'Language / 语言',
       settingShellLabel: '默认Shell（下次新本地标签生效）',
+      settingAiAutoFixLabel: 'AI-Fix自动建议',
+      settingAiAutoFixOn: '开启',
+      settingAiAutoFixOff: '关闭（推荐）',
       settingSshAutoReconnectLabel: 'SSH自动重连',
       settingSshAutoReconnectOn: '开启',
       settingSshAutoReconnectOff: '关闭',
@@ -576,6 +583,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       settingThemeLabel: 'Theme',
       settingLanguageLabel: 'Language',
       settingShellLabel: 'Default Shell (applies to new local tabs)',
+      settingAiAutoFixLabel: 'AI-Fix Auto Suggest',
+      settingAiAutoFixOn: 'On',
+      settingAiAutoFixOff: 'Off (recommended)',
       settingSshAutoReconnectLabel: 'SSH Auto Reconnect',
       settingSshAutoReconnectOn: 'On',
       settingSshAutoReconnectOff: 'Off',
@@ -781,7 +791,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     setLabel('setting-theme', 'settingThemeLabel');
     setLabel('setting-language', 'settingLanguageLabel');
     setLabel('setting-shell', 'settingShellLabel');
+    setLabel('setting-ai-auto-fix', 'settingAiAutoFixLabel');
     setLabel('setting-ssh-auto-reconnect', 'settingSshAutoReconnectLabel');
+    setSelectOption('setting-ai-auto-fix', 'false', 'settingAiAutoFixOff');
+    setSelectOption('setting-ai-auto-fix', 'true', 'settingAiAutoFixOn');
     setLabel('setting-ssh-retry-max', 'settingSshRetryMaxLabel');
     setLabel('setting-ssh-retry-delay', 'settingSshRetryDelayLabel');
     setLabel('setting-ssh-keepalive', 'settingSshKeepaliveLabel');
@@ -1550,6 +1563,176 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.terminal.write('\r');
   }
 
+  function getAiContextSnapshot() {
+    const tab = getCurrentTab();
+    const mode = tab && tab.type === 'ssh' ? 'ssh' : 'local';
+    const cwd = terminalShellState.activeCwd || terminalShellState.cwdByMode[mode] || '';
+    const recentCommands = (terminalShellState.historyCommands || [])
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+      .slice(0, 3);
+    return { mode, cwd, recentCommands };
+  }
+
+  function formatRiskLabel(level) {
+    if (level === 'high') return lr('高风险', 'High risk');
+    if (level === 'medium') return lr('中风险', 'Medium risk');
+    return lr('低风险', 'Low risk');
+  }
+
+  function writeAiHintToTerminal(lines) {
+    if (!term || !Array.isArray(lines)) return;
+    lines.forEach((line) => {
+      if (line) {
+        term.writeln(`\x1b[36m${line}\x1b[0m`);
+      }
+    });
+  }
+
+  async function logAiAction(action, proposal) {
+    if (!window.terminal || typeof window.terminal.aiLogAction !== 'function') return;
+    const ctx = getAiContextSnapshot();
+    try {
+      await window.terminal.aiLogAction({
+        action,
+        goal: proposal && proposal.goal ? proposal.goal : '',
+        command: proposal && proposal.command ? proposal.command : '',
+        mode: ctx.mode,
+        cwd: ctx.cwd,
+        riskLevel: proposal && proposal.risk && proposal.risk.level ? proposal.risk.level : '',
+        provider: proposal && proposal.provider ? proposal.provider : ''
+      });
+    } catch (_err) {
+      // noop
+    }
+  }
+
+  async function openAiCommandAssistantFromPalette() {
+    const rawQuery = String(commandPaletteLastQuery || '').trim();
+    const goal = rawQuery.replace(/^ai\s*[:：]?\s*/i, '').trim();
+    if (!goal) {
+      setStatus(
+        lr('请在命令面板输入：AI 你的目标（例如 AI 查看CPU占用）', 'Type in palette: AI <your goal> (e.g. AI check CPU usage)'),
+        'info'
+      );
+      openCommandPalette('AI ');
+      return;
+    }
+    if (!window.terminal || typeof window.terminal.aiGenerateCommand !== 'function') {
+      setStatus(lr('当前版本未启用AI能力', 'AI capability is not available in this build'), 'error');
+      return;
+    }
+    const ctx = getAiContextSnapshot();
+    let proposal = null;
+    try {
+      proposal = await window.terminal.aiGenerateCommand({
+        goal: String(goal).trim(),
+        mode: ctx.mode,
+        cwd: ctx.cwd,
+        recentCommands: ctx.recentCommands
+      });
+    } catch (err) {
+      setStatus(lr(
+        `AI请求失败: ${String(err && err.message ? err.message : err)}`,
+        `AI request failed: ${String(err && err.message ? err.message : err)}`
+      ), 'error');
+      return;
+    }
+    if (!proposal || !proposal.ok || !proposal.command) {
+      setStatus(lr(
+        `AI未返回可执行命令: ${proposal && proposal.error ? proposal.error : 'unknown'}`,
+        `AI did not return a runnable command: ${proposal && proposal.error ? proposal.error : 'unknown'}`
+      ), 'error');
+      return;
+    }
+    const risk = proposal.risk || { level: 'low', reasons: [], requiresConfirmation: false };
+    setActiveNav('nav-terminal');
+    showWorkspaceView('terminal');
+    replaceTerminalInputLine(proposal.command);
+    term.focus();
+    writeAiHintToTerminal([
+      lr(`[AI] 目标: ${goal}`, `[AI] Goal: ${goal}`),
+      lr(`[AI] 建议: ${proposal.command}`, `[AI] Suggestion: ${proposal.command}`),
+      lr(`[AI] 解释: ${proposal.explanation || 'N/A'}`, `[AI] Why: ${proposal.explanation || 'N/A'}`),
+      lr(`[AI] 风险: ${formatRiskLabel(risk.level)}`, `[AI] Risk: ${formatRiskLabel(risk.level)}`),
+      risk.reasons && risk.reasons.length
+        ? lr(`[AI] 风险原因: ${risk.reasons.join('；')}`, `[AI] Risk reasons: ${risk.reasons.join('; ')}`)
+        : '',
+      risk.requiresConfirmation
+        ? lr('[AI] 高风险命令：请先检查后再按 Enter 执行。', '[AI] Risky command: review carefully before pressing Enter.')
+        : lr('[AI] 命令已插入输入行，按 Enter 执行。', '[AI] Command inserted. Press Enter to run.')
+    ]);
+    await logAiAction('insert', proposal);
+    setStatus(lr('AI命令已插入输入行（无浏览器弹窗模式）', 'AI command inserted (dialog-free mode)'), 'success');
+  }
+
+  function detectCommandFailureSnippet(outputText) {
+    const text = String(outputText || '');
+    if (!text) return '';
+    const plain = text
+      .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
+      .replace(/\r/g, '\n');
+    const lines = plain.split('\n').map((line) => line.trim()).filter(Boolean);
+    if (!lines.length) return '';
+    // Keep matcher strict to avoid false positives from normal app logs that contain "error"/"failed".
+    // Only treat shell/runtime style failures as AI-Fix trigger.
+    const patterns = [
+      /^(?:bash|zsh|sh):\s.*(command not found|no such file|cannot access|permission denied|operation not permitted)/i,
+      /^(?:command not found|permission denied|operation not permitted)$/i,
+      /(?:traceback \(most recent call last\)|segmentation fault|core dumped)/i
+    ];
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      if (patterns.some((p) => p.test(lines[i]))) {
+        return lines[i];
+      }
+    }
+    return '';
+  }
+
+  async function maybeSuggestAiFixFromOutput(outputText) {
+    if (!window.terminal || typeof window.terminal.aiSuggestFix !== 'function') return;
+    if (!currentSettings || currentSettings.aiAutoFixEnabled !== true) return;
+    if (!aiLastCommandBoundary || !aiLastCommandBoundary.command) return;
+    const boundaryId = `${aiLastCommandBoundary.submittedAt || ''}|${aiLastCommandBoundary.command}`;
+    if (aiFixSuggestedBoundaryId === boundaryId) return;
+    const failureSnippet = detectCommandFailureSnippet(outputText);
+    if (!failureSnippet) return;
+    const submittedMs = Date.parse(aiLastCommandBoundary.submittedAt || '');
+    if (Number.isFinite(submittedMs) && Date.now() - submittedMs > 30000) return;
+    aiFixSuggestedBoundaryId = boundaryId;
+    const ctx = getAiContextSnapshot();
+    let result = null;
+    try {
+      result = await window.terminal.aiSuggestFix({
+        command: aiLastCommandBoundary.command,
+        errorText: failureSnippet,
+        mode: ctx.mode,
+        cwd: ctx.cwd,
+        recentCommands: ctx.recentCommands
+      });
+    } catch (_err) {
+      return;
+    }
+    const suggestions = result && Array.isArray(result.suggestions)
+      ? result.suggestions.filter((item) => item && item.command).slice(0, 3)
+      : [];
+    if (!suggestions.length) return;
+    writeAiHintToTerminal([
+      lr(`[AI-Fix] 失败线索: ${failureSnippet}`, `[AI-Fix] Failure hint: ${failureSnippet}`),
+      ...suggestions.map((item, idx) => lr(
+        `[AI-Fix] ${idx + 1}. ${item.command}${item.reason ? ` (${item.reason})` : ''}`,
+        `[AI-Fix] ${idx + 1}. ${item.command}${item.reason ? ` (${item.reason})` : ''}`
+      ))
+    ]);
+    setStatus(lr('已生成AI修复建议（见终端输出）', 'AI fix suggestions generated (see terminal output)'), 'info');
+    await logAiAction('fix_suggestions_shown', {
+      goal: aiLastCommandBoundary.command,
+      command: suggestions[0] && suggestions[0].command ? suggestions[0].command : '',
+      risk: suggestions[0] && suggestions[0].risk ? suggestions[0].risk : { level: 'low' },
+      provider: result && result.provider ? result.provider : ''
+    });
+  }
+
   function buildCommandPaletteActions() {
     const actions = [];
 
@@ -1587,6 +1770,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     actions.push(...[
+      {
+        id: 'ai-generate-command',
+        label: lr('AI: 自然语言生成命令', 'AI: Generate command from natural language'),
+        keywords: 'ai assistant natural language command',
+        run: () => openAiCommandAssistantFromPalette()
+      },
       {
         id: 'new-local',
         label: lr('新建本地标签', 'New local tab'),
@@ -1673,13 +1862,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   function renderCommandPalette(query = '') {
     if (!els.commandPaletteList) return;
     const q = String(query || '').trim().toLowerCase();
+    commandPaletteLastQuery = String(query || '');
     const allActions = buildCommandPaletteActions();
-    const filtered = !q
+    let filtered = !q
       ? allActions
       : allActions.filter((item) => {
           const hay = `${item.label} ${item.keywords || ''}`.toLowerCase();
           return hay.includes(q);
         });
+    const isAiIntent = /^ai(?:\s|[:：]|$)/i.test(String(query || '').trim());
+    if (isAiIntent) {
+      const aiAction = allActions.find((item) => item && item.id === 'ai-generate-command');
+      if (aiAction && !filtered.some((item) => item && item.id === aiAction.id)) {
+        // Keep AI action available even when query includes natural-language goal text.
+        filtered = [aiAction, ...filtered];
+      }
+    }
     commandPaletteResults = filtered.slice(0, 100);
     if (commandPaletteResults.length === 0) {
       commandPaletteActiveIndex = 0;
@@ -1755,9 +1953,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderCommandPalette(els.commandPaletteInput ? els.commandPaletteInput.value : '');
   }
 
+  function tryRunAiFromPaletteQuery() {
+    if (!els.commandPaletteInput) return false;
+    const raw = String(els.commandPaletteInput.value || '').trim();
+    if (!/^ai(?:\s|[:：]|$)/i.test(raw)) return false;
+    commandPaletteLastQuery = raw;
+    closeCommandPalette();
+    Promise.resolve(openAiCommandAssistantFromPalette()).catch((err) => {
+      setStatus(lr(
+        `命令执行失败: ${String(err && err.message ? err.message : err)}`,
+        `Command failed: ${String(err && err.message ? err.message : err)}`
+      ), 'error');
+    });
+    return true;
+  }
+
   function executeCommandPaletteSelection() {
     const action = commandPaletteResults[commandPaletteActiveIndex];
-    if (!action || typeof action.run !== 'function') return;
+    if (!action || typeof action.run !== 'function') {
+      // When query contains natural-language AI goal text, there might be no selection.
+      // Still allow pressing Enter to run AI flow.
+      tryRunAiFromPaletteQuery();
+      return;
+    }
     closeCommandPalette();
     Promise.resolve(action.run()).catch((err) => {
       setStatus(lr(
@@ -1995,6 +2213,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       els.settingLanguage.value = currentSettings.language === 'en-US' ? 'en-US' : 'zh-CN';
     }
     els.settingShell.value = currentSettings.defaultShell || '';
+    if (els.settingAiAutoFix) {
+      els.settingAiAutoFix.value = String(currentSettings.aiAutoFixEnabled === true);
+    }
     els.settingSshAutoReconnect.value = String(currentSettings.sshAutoReconnect !== false);
     els.settingSshRetryMax.value = String(currentSettings.sshReconnectMaxAttempts || 6);
     els.settingSshRetryDelay.value = String(currentSettings.sshReconnectBaseDelayMs || 1500);
@@ -3539,6 +3760,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (shouldRenderIncomingOutput(incoming, targetTab)) {
       term.write(incoming.data);
     }
+    void maybeSuggestAiFixFromOutput(incoming.data);
   });
   window.terminal.onCwd((payload) => {
     if (!payload || typeof payload !== 'object') return;
@@ -3548,6 +3770,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!payload || typeof payload !== 'object') return;
     const command = String(payload.command || '').trim();
     if (command) {
+      aiLastCommandBoundary = {
+        command,
+        mode: payload.mode || getCurrentTerminalMode(),
+        cwd: payload.cwd || terminalShellState.activeCwd || '',
+        submittedAt: payload.submittedAt || new Date().toISOString()
+      };
+      aiFixSuggestedBoundaryId = '';
       terminalShellState.historyCommands = [
         command,
         ...terminalShellState.historyCommands.filter((item) => item !== command)
@@ -3851,6 +4080,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       theme: els.settingTheme.value === 'light' ? 'light' : 'dark',
       language: els.settingLanguage && els.settingLanguage.value === 'en-US' ? 'en-US' : 'zh-CN',
       defaultShell: els.settingShell.value.trim(),
+      aiAutoFixEnabled: !!(els.settingAiAutoFix && els.settingAiAutoFix.value === 'true'),
       sshAutoReconnect: els.settingSshAutoReconnect.value !== 'false',
       sshReconnectMaxAttempts: Math.max(1, Math.min(20, Number(els.settingSshRetryMax.value) || 6)),
       sshReconnectBaseDelayMs: Math.max(500, Math.min(60000, Number(els.settingSshRetryDelay.value) || 1500)),
