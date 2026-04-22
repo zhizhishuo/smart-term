@@ -1545,7 +1545,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function setAppMenuOpen(open) {
     if (!els.appMenu) return;
+    if (open) {
+      positionAppMenu();
+    }
     els.appMenu.classList.toggle('hidden', !open);
+  }
+
+  function positionAppMenu() {
+    if (!els.appMenu || !els.btnAppMenu) return;
+    const rect = els.btnAppMenu.getBoundingClientRect();
+    const menuWidth = els.appMenu.offsetWidth || 260;
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+    const left = Math.max(12, Math.min(rect.left, viewportWidth - menuWidth - 12));
+    const top = rect.bottom + 8;
+    els.appMenu.style.left = `${Math.round(left)}px`;
+    els.appMenu.style.top = `${Math.round(top)}px`;
   }
 
   function updateToolbarContext() {
@@ -1575,7 +1589,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       button.addEventListener('click', async () => {
         setActiveNav('nav-connections');
         showWorkspaceView('connections');
-        await loadConnectionEditorFromConfig(config);
+        await loadConnectionEditorFromConfig(config, { includeSecret: true });
         await connectFromConnectionEditor();
       });
       els.sidebarRecentConnections.appendChild(button);
@@ -3171,9 +3185,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     refreshConnectionEditorAuthFields();
   }
 
-  async function loadConnectionEditorFromConfig(config) {
+  async function loadConnectionEditorFromConfig(config, options = {}) {
     if (!config) return;
-    const secret = await getSavedSecret(config.id);
+    const includeSecret = !!(options && options.includeSecret);
+    const secret = includeSecret ? await getSavedSecret(config.id) : null;
     editingConfigId = config.id || '';
     if (els.savedSelect) els.savedSelect.value = config.id || '';
     setupJumpConfigOptions(editingConfigId, config.jumpConfigId || '');
@@ -3183,9 +3198,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     els.connUsername.value = config.username || '';
     els.connAuthType.value = config.authType || 'password';
     if (els.connJumpConfig) els.connJumpConfig.value = config.jumpConfigId || '';
-    els.connPassword.value = (secret && secret.password) || '';
-    els.connKey.value = (secret && secret.privateKey) || String(config.keyPath || '');
-    els.connPassphrase.value = (secret && secret.passphrase) || '';
+    els.connPassword.value = includeSecret ? ((secret && secret.password) || '') : '';
+    els.connKey.value = includeSecret
+      ? ((secret && secret.privateKey) || String(config.keyPath || ''))
+      : String(config.keyPath || '');
+    els.connPassphrase.value = includeSecret ? ((secret && secret.passphrase) || '') : '';
     refreshConnectionEditorAuthFields();
   }
 
@@ -3231,10 +3248,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     await refreshSavedConfigs();
     if (editingConfigId && els.savedSelect) {
       els.savedSelect.value = editingConfigId;
-      const selected = getSelectedConfig();
-      if (selected) {
-        await loadConnectionEditorFromConfig(selected);
-      }
     }
     setStatus(lr('SSH配置已保存', 'SSH profile saved'), 'success');
   }
@@ -4185,6 +4198,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (els.appMenu.contains(target) || els.btnAppMenu.contains(target)) return;
     setAppMenuOpen(false);
   });
+  window.addEventListener('resize', () => {
+    if (!els.appMenu || els.appMenu.classList.contains('hidden')) return;
+    positionAppMenu();
+  });
   els.workspacePrimaryAction.addEventListener('click', async () => {
     if (typeof workspacePrimaryActionHandler === 'function') {
       await workspacePrimaryActionHandler();
@@ -4202,7 +4219,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       showWorkspaceView('connections');
       const selected = getSelectedConfig();
       if (selected) {
-        loadConnectionEditorFromConfig(selected);
+        loadConnectionEditorFromConfig(selected, { includeSecret: false });
       } else {
         clearConnectionEditor();
       }
@@ -4265,7 +4282,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       showWorkspaceView('connections');
       const selected = getSelectedConfig();
       if (selected) {
-        loadConnectionEditorFromConfig(selected);
+        loadConnectionEditorFromConfig(selected, { includeSecret: false });
       } else {
         clearConnectionEditor();
       }
@@ -4579,7 +4596,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       setStatus(lr('请先选择一条SSH配置', 'Please select an SSH profile first'), 'error');
       return;
     }
-    await loadConnectionEditorFromConfig(selected);
+    await loadConnectionEditorFromConfig(selected, { includeSecret: true });
     setStatus(lr(`已加载配置: ${selected.name || selected.host}`, `Profile loaded: ${selected.name || selected.host}`), 'info');
   });
 
@@ -4598,7 +4615,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     els.savedSelect.addEventListener('change', async () => {
       const selected = getSelectedConfig();
       if (selected) {
-        await loadConnectionEditorFromConfig(selected);
+        await loadConnectionEditorFromConfig(selected, { includeSecret: true });
         setStatus(
           lr(`已选中配置: ${selected.name || selected.host}`, `Selected profile: ${selected.name || selected.host}`),
           'info'
@@ -4611,7 +4628,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         setStatus(lr('请先选择一条SSH配置', 'Please select an SSH profile first'), 'error');
         return;
       }
-      await loadConnectionEditorFromConfig(selected);
+      await loadConnectionEditorFromConfig(selected, { includeSecret: true });
       await connectFromConnectionEditor();
     });
   }
@@ -4622,7 +4639,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       renderSavedConfigList(preferred);
       const selected = getSelectedConfig();
       if (selected) {
-        await loadConnectionEditorFromConfig(selected);
+        await loadConnectionEditorFromConfig(selected, { includeSecret: false });
       }
     });
   }
@@ -4633,7 +4650,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       renderSavedConfigList(preferred);
       const selected = getSelectedConfig();
       if (selected) {
-        await loadConnectionEditorFromConfig(selected);
+        await loadConnectionEditorFromConfig(selected, { includeSecret: false });
       }
     });
   }
@@ -4773,12 +4790,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   connectionSortMode = els.connSort ? (els.connSort.value || 'name-asc') : 'name-asc';
   await refreshSavedConfigs();
   refreshConnectionEditorAuthFields();
-  const initialSelectedConfig = getSelectedConfig();
-  if (initialSelectedConfig) {
-    await loadConnectionEditorFromConfig(initialSelectedConfig);
-  } else {
-    clearConnectionEditor();
-  }
+  clearConnectionEditor();
   await updateSystemMonitor();
   setInterval(() => {
     updateSystemMonitor();

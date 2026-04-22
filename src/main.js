@@ -2331,12 +2331,7 @@ ipcMain.on('terminal:resize', (_event, payload) => {
 });
 
 ipcMain.handle('ssh-config:list', async () => {
-  const list = readSSHConfigs();
-  const enriched = await Promise.all(list.map(async (item) => {
-    const secret = await readSSHConfigSecret(item.id);
-    return { ...item, hasSecret: !!(secret && (secret.password || secret.privateKey || secret.passphrase)) };
-  }));
-  return enriched;
+  return readSSHConfigs();
 });
 
 ipcMain.handle('ssh-config:save', async (_event, config) => {
