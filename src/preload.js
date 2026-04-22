@@ -46,6 +46,11 @@ contextBridge.exposeInMainWorld('terminal', {
     ipcRenderer.on('terminal:reconnect-state', handler);
     return () => ipcRenderer.removeListener('terminal:reconnect-state', handler);
   },
+  onCloseCurrentTab: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('app:close-current-tab', handler);
+    return () => ipcRenderer.removeListener('app:close-current-tab', handler);
+  },
   sftpConnectPanel: (panelId, config) => ipcRenderer.invoke('sftp:connect-panel', { panelId, config }),
   sftpList: (panelId, path) => ipcRenderer.invoke('sftp:list', { panelId, path }),
   sftpMkdir: (panelId, parentPath, dirName) => ipcRenderer.invoke('sftp:mkdir', { panelId, parentPath, dirName }),
@@ -72,6 +77,9 @@ contextBridge.exposeInMainWorld('terminal', {
   clearAudit: () => ipcRenderer.invoke('audit:clear'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (patch) => ipcRenderer.invoke('settings:save', patch),
+  aiGenerateCommand: (payload) => ipcRenderer.invoke('ai:generate-command', payload),
+  aiSuggestFix: (payload) => ipcRenderer.invoke('ai:suggest-fix', payload),
+  aiLogAction: (payload) => ipcRenderer.invoke('ai:log-action', payload),
   listSSHConfigs: () => ipcRenderer.invoke('ssh-config:list'),
   saveSSHConfig: (config) => ipcRenderer.invoke('ssh-config:save', config),
   getSSHConfigSecret: (id) => ipcRenderer.invoke('ssh-config:get-secret', id),

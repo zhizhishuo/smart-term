@@ -128,12 +128,17 @@
         }
         #toolbar {
             display: flex;
-            gap: 8px;
             align-items: center;
-            flex-wrap: wrap;
-            padding: 10px;
+            gap: 12px;
+            padding: 10px 12px;
             border-bottom: 1px solid #2d2d2d;
             background: #252526;
+        }
+        #toolbar-leading {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
         }
         #toolbar-brand {
             font-size: 13px;
@@ -141,6 +146,21 @@
             font-weight: 600;
             letter-spacing: .2px;
             white-space: nowrap;
+        }
+        #toolbar-active-context {
+            height: 28px;
+            display: inline-flex;
+            align-items: center;
+            border: 1px solid #3a3a3a;
+            background: #1f2a35;
+            color: #ffffff;
+            border-radius: 999px;
+            padding: 0 10px;
+            font-size: 12px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: min(32vw, 360px);
         }
         #toolbar button, #toolbar select {
             height: 30px;
@@ -156,8 +176,7 @@
             cursor: pointer;
         }
         #status {
-            margin-left: 10px;
-            margin-right: auto;
+            flex: 1;
             font-size: 12px;
             color: #9cdcfe;
             white-space: nowrap;
@@ -165,14 +184,14 @@
             text-overflow: ellipsis;
             max-width: min(62vw, 920px);
         }
+        #toolbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 0 0 auto;
+        }
         #legacy-actions {
             display: none;
-        }
-        #toolbar > #workspace-secondary-actions {
-            width: 100%;
-            padding: 0;
-            border-bottom: 0;
-            background: transparent;
         }
         #btn-quick-reconnect {
             height: 28px;
@@ -187,6 +206,63 @@
         }
         #btn-quick-reconnect.show {
             display: inline-block;
+        }
+        #app-menu-shell {
+            position: relative;
+            flex: 0 0 auto;
+        }
+        #btn-app-menu {
+            min-width: 72px;
+        }
+        #app-menu {
+            position: absolute;
+            right: 0;
+            top: calc(100% + 8px);
+            width: 260px;
+            border: 1px solid #3a3a3a;
+            border-radius: 10px;
+            background: #1f1f1f;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 80;
+        }
+        .menu-group {
+            border: 1px solid #333;
+            border-radius: 8px;
+            background: #191919;
+            padding: 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .menu-group-title {
+            font-size: 11px;
+            color: #8f8f8f;
+            padding: 2px 6px 4px 6px;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+        }
+        .menu-item {
+            height: 32px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: #d4d4d4;
+            border-radius: 8px;
+            text-align: left;
+            padding: 0 10px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .menu-item:hover {
+            background: #2a2a2a;
+        }
+        .menu-item.active {
+            border-color: #569cd6;
+            background: #1f2a35;
+            color: #ffffff;
         }
         #terminal-container {
             flex: 1;
@@ -289,15 +365,71 @@
             font-weight: bold;
         }
         #sidebar {
-            width: 320px;
+            width: 260px;
             border-right: 1px solid #2d2d2d;
             background: #1c1c1c;
             padding: 10px;
             box-sizing: border-box;
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 10px;
             overflow: hidden;
+        }
+        .sidebar-pane {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-height: 0;
+        }
+        .sidebar-card {
+            border: 1px solid #343434;
+            border-radius: 10px;
+            padding: 10px;
+            background: #222;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .sidebar-section-title {
+            font-size: 12px;
+            color: #9cdcfe;
+            margin: 0;
+        }
+        .sidebar-text {
+            font-size: 12px;
+            color: #bdbdbd;
+            line-height: 1.5;
+        }
+        .sidebar-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .sidebar-actions button,
+        .sidebar-list-item {
+            height: 30px;
+            border: 1px solid #3a3a3a;
+            background: #2d2d2d;
+            color: #d4d4d4;
+            border-radius: 8px;
+            padding: 0 10px;
+            text-align: left;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .sidebar-actions button:hover,
+        .sidebar-list-item:hover {
+            background: #37373d;
+        }
+        .sidebar-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .sidebar-empty {
+            font-size: 12px;
+            color: #8f8f8f;
+            padding: 8px 0;
         }
         .monitor-card {
             border: 1px solid #343434;
@@ -404,12 +536,30 @@
             transition: width 150ms linear;
             background: linear-gradient(90deg, #4ec9b0, #9cdcfe);
         }
+        #monitor-panel.docked-panel {
+            align-items: stretch !important;
+            justify-content: stretch !important;
+            background: #1e1e1e !important;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        #monitor-panel .modal-card {
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+        }
+        .monitor-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            min-height: 0;
+        }
+        .monitor-grid .monitor-card {
+            min-height: 0;
+        }
         @media (max-width: 1200px) {
             #sidebar {
-                width: 280px;
-            }
-            #app-nav {
-                width: 150px;
+                width: 220px;
             }
         }
         #terminal {
@@ -1148,6 +1298,9 @@
             .connections-grid {
                 grid-template-columns: 1fr;
             }
+            .monitor-grid {
+                grid-template-columns: 1fr;
+            }
         }
         #transfer-progress-fill {
             width: 0%;
@@ -1190,16 +1343,35 @@
 <body>
     <div id="app">
         <div id="toolbar">
-            <div id="toolbar-brand">Smart-Term</div>
+            <div id="toolbar-leading">
+                <div id="toolbar-brand">Smart-Term</div>
+                <div id="app-menu-shell">
+                    <button id="btn-app-menu">菜单</button>
+                    <div id="app-menu" class="hidden">
+                        <div class="menu-group">
+                            <div class="menu-group-title">连接</div>
+                            <button id="workspace-action-open-ssh" class="menu-item">新建SSH连接</button>
+                            <button id="nav-terminal" class="menu-item active">终端</button>
+                            <button id="nav-connections" class="menu-item">连接</button>
+                        </div>
+                        <div class="menu-group">
+                            <div class="menu-group-title">工作区</div>
+                            <button id="nav-transfer" class="menu-item">文件传输</button>
+                            <button id="nav-history" class="menu-item">命令历史</button>
+                            <button id="nav-audit" class="menu-item">审计日志</button>
+                            <button id="nav-monitor" class="menu-item">监控</button>
+                        </div>
+                        <div class="menu-group">
+                            <div class="menu-group-title">偏好</div>
+                            <button id="nav-settings" class="menu-item">设置</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="toolbar-active-context">当前标签: Local</div>
+            </div>
             <div id="status">初始化中...</div>
-            <button id="btn-quick-reconnect">快速重连</button>
-            <div id="workspace-secondary-actions">
-                <button id="workspace-action-open-ssh" data-views="terminal,transfer,history,settings">新建SSH连接</button>
-                <button id="workspace-action-open-connections" data-views="terminal,transfer,history,settings">SSH配置</button>
-                <button id="workspace-action-open-transfer" data-views="terminal,history,settings">打开文件传输</button>
-                <button id="workspace-action-open-history" data-views="terminal,transfer,settings">命令历史</button>
-                <button id="workspace-action-open-audit" data-views="terminal,transfer,history,settings">审计日志</button>
-                <button id="workspace-action-open-settings" data-views="terminal,transfer,history">设置</button>
+            <div id="toolbar-actions">
+                <button id="btn-quick-reconnect">快速重连</button>
             </div>
             <div id="legacy-actions">
                 <button id="btn-open-ssh">新建SSH标签</button>
@@ -1212,16 +1384,92 @@
             </div>
         </div>
         <div id="main-content">
-            <aside id="app-nav">
-                <button class="nav-item active" id="nav-terminal">终端</button>
-                <button class="nav-item" id="nav-connections">连接</button>
-                <button class="nav-item" id="nav-transfer">文件传输</button>
-                <button class="nav-item" id="nav-history">命令历史</button>
-                <button class="nav-item" id="nav-audit">审计日志</button>
-                <button class="nav-item" id="nav-settings">设置</button>
-                <button class="nav-item" id="nav-monitor">监控: 开</button>
-            </aside>
             <aside id="sidebar">
+                <div id="sidebar-terminal" class="sidebar-pane">
+                    <div class="sidebar-card">
+                        <h3 class="sidebar-section-title" id="sidebar-terminal-title">终端快捷操作</h3>
+                        <div class="sidebar-actions">
+                            <button id="sidebar-new-local">新建本地标签</button>
+                            <button id="sidebar-new-ssh">新建SSH连接</button>
+                            <button id="sidebar-open-connections">SSH配置</button>
+                        </div>
+                    </div>
+                    <div class="sidebar-card">
+                        <h3 class="sidebar-section-title" id="sidebar-recent-title">最近连接</h3>
+                        <div id="sidebar-recent-connections" class="sidebar-list"></div>
+                    </div>
+                </div>
+                <div id="sidebar-connections" class="sidebar-pane hidden">
+                    <div class="sidebar-card">
+                        <h3 class="sidebar-section-title" id="sidebar-connections-title">连接工作台</h3>
+                        <div class="sidebar-text" id="sidebar-connections-text">集中管理保存的 SSH 配置，并从右侧直接编辑或连接。</div>
+                    </div>
+                    <div class="sidebar-card">
+                        <h3 class="sidebar-section-title" id="sidebar-connections-actions-title">快捷操作</h3>
+                        <div class="sidebar-actions">
+                            <button id="sidebar-connections-new-ssh">新建SSH连接</button>
+                            <button id="sidebar-connections-new-config">新建空白配置</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="sidebar-transfer" class="sidebar-pane hidden">
+                    <div class="sidebar-card">
+                        <h3 class="sidebar-section-title" id="sidebar-transfer-title">文件传输</h3>
+                        <div class="sidebar-text" id="sidebar-transfer-text">查看双面板 SFTP 队列，并在需要时恢复中断任务。</div>
+                    </div>
+                    <div class="sidebar-card">
+                        <h3 class="sidebar-section-title" id="sidebar-transfer-status-title">队列状态</h3>
+                        <div class="sidebar-text" id="sidebar-transfer-summary">队列: 0</div>
+                        <div class="sidebar-text" id="sidebar-transfer-result">最近结果: -</div>
+                        <div class="sidebar-actions">
+                            <button id="sidebar-transfer-recover">恢复中断传输</button>
+                            <button id="sidebar-transfer-terminal">切回终端</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="sidebar-monitor" class="sidebar-pane hidden">
+                    <div class="sidebar-card">
+                        <h3 class="sidebar-section-title" id="sidebar-monitor-title">系统监控</h3>
+                        <div class="sidebar-text" id="sidebar-monitor-text">监控已改为独立工作区页面，方便专注查看 CPU、内存和磁盘状态。</div>
+                    </div>
+                    <div class="sidebar-card">
+                        <div class="sidebar-actions">
+                            <button id="sidebar-monitor-terminal">切回终端</button>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+            <div id="workspace">
+                <div id="workspace-view-header">
+                    <div>
+                        <div id="workspace-view-title"></div>
+                        <div id="workspace-view-subtitle"></div>
+                    </div>
+                    <button id="workspace-primary-action">新建本地标签</button>
+                </div>
+                <div id="tabs-bar">
+                    <div id="tabs-list"></div>
+                    <button id="btn-local" title="新建本地标签">+</button>
+                </div>
+                <div id="terminal-container">
+                    <div id="terminal"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="monitor-panel" class="hidden">
+        <div class="modal-card panel-shell">
+            <div class="panel-header">
+                <div>
+                    <h3 class="panel-title">系统监控</h3>
+                    <p class="panel-subtitle">查看 CPU、内存和磁盘状态</p>
+                </div>
+                <div class="panel-header-actions">
+                    <button id="btn-monitor-terminal">切回终端</button>
+                </div>
+            </div>
+            <div class="monitor-grid">
                 <div class="monitor-card">
                     <div class="monitor-title-row">
                         <div class="monitor-title">CPU</div>
@@ -1242,22 +1490,6 @@
                     <div class="monitor-row" id="disk-line">-</div>
                     <div class="monitor-row" id="disk-line2">-</div>
                     <div class="bar"><div class="bar-fill" id="disk-bar"></div></div>
-                </div>
-            </aside>
-            <div id="workspace">
-                <div id="workspace-view-header">
-                    <div>
-                        <div id="workspace-view-title"></div>
-                        <div id="workspace-view-subtitle"></div>
-                    </div>
-                    <button id="workspace-primary-action">新建本地标签</button>
-                </div>
-                <div id="tabs-bar">
-                    <div id="tabs-list"></div>
-                    <button id="btn-local" title="新建本地标签">+</button>
-                </div>
-                <div id="terminal-container">
-                    <div id="terminal"></div>
                 </div>
             </div>
         </div>

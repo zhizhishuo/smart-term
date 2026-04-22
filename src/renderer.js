@@ -40,6 +40,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const els = {
     status: document.getElementById('status'),
+    toolbarActiveContext: document.getElementById('toolbar-active-context'),
+    btnAppMenu: document.getElementById('btn-app-menu'),
+    appMenu: document.getElementById('app-menu'),
     btnLocal: document.getElementById('btn-local'),
     btnOpenSsh: document.getElementById('btn-open-ssh'),
     btnDisconnectSsh: document.getElementById('btn-disconnect-ssh'),
@@ -62,6 +65,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     navSettings: document.getElementById('nav-settings'),
     navMonitor: document.getElementById('nav-monitor'),
     sidebar: document.getElementById('sidebar'),
+    sidebarTerminal: document.getElementById('sidebar-terminal'),
+    sidebarConnections: document.getElementById('sidebar-connections'),
+    sidebarTransfer: document.getElementById('sidebar-transfer'),
+    sidebarMonitor: document.getElementById('sidebar-monitor'),
+    sidebarNewLocal: document.getElementById('sidebar-new-local'),
+    sidebarNewSsh: document.getElementById('sidebar-new-ssh'),
+    sidebarOpenConnections: document.getElementById('sidebar-open-connections'),
+    sidebarRecentConnections: document.getElementById('sidebar-recent-connections'),
+    sidebarConnectionsNewSsh: document.getElementById('sidebar-connections-new-ssh'),
+    sidebarConnectionsNewConfig: document.getElementById('sidebar-connections-new-config'),
+    sidebarTransferSummary: document.getElementById('sidebar-transfer-summary'),
+    sidebarTransferResult: document.getElementById('sidebar-transfer-result'),
+    sidebarTransferRecover: document.getElementById('sidebar-transfer-recover'),
+    sidebarTransferTerminal: document.getElementById('sidebar-transfer-terminal'),
+    sidebarMonitorTerminal: document.getElementById('sidebar-monitor-terminal'),
     workspace: document.getElementById('workspace'),
     workspaceViewHeader: document.getElementById('workspace-view-header'),
     workspaceViewTitle: document.getElementById('workspace-view-title'),
@@ -78,6 +96,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     workspaceActionLoadSession: document.getElementById('workspace-action-load-session'),
     tabsBar: document.getElementById('tabs-bar'),
     terminalContainer: document.getElementById('terminal-container'),
+    monitorPanel: document.getElementById('monitor-panel'),
+    btnMonitorTerminal: document.getElementById('btn-monitor-terminal'),
     connectionsPanel: document.getElementById('connections-panel'),
     tabsList: document.getElementById('tabs-list'),
     modal: document.getElementById('ssh-modal'),
@@ -234,6 +254,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let r2rSplitDragging = false;
   let cpuMonitorMode = localStorage.getItem(CPU_MONITOR_MODE_KEY) === 'overview' ? 'overview' : 'detailed';
   let currentSettings = null;
+  let activeWorkspaceView = 'terminal';
   let reconnectStateActive = false;
   let reconnectInputWarned = false;
   const pendingOutputBySessionId = new Map();
@@ -310,6 +331,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       navHistory: '命令历史',
       navAudit: '审计日志',
       navSettings: '设置',
+      navMonitor: '监控',
+      menuLabel: '菜单',
+      menuGroupConnections: '连接',
+      menuGroupWorkspace: '工作区',
+      menuGroupPreferences: '偏好',
+      currentTabPrefix: '当前标签',
+      currentPagePrefix: '当前页面',
       monitorOn: '监控: 开',
       monitorOff: '监控: 关',
       btnOpenHistory: '命令历史',
@@ -462,9 +490,23 @@ document.addEventListener('DOMContentLoaded', async () => {
       viewSettingsTitle: '设置',
       viewSettingsSubtitle: '终端显示、默认Shell与SSH重连参数',
       viewSettingsPrimary: '保存设置',
+      viewMonitorTitle: '系统监控',
+      viewMonitorSubtitle: '实时查看 CPU、内存和磁盘状态',
+      viewMonitorPrimary: '切回终端',
       viewTerminalTitle: '终端',
       viewTerminalSubtitle: '多标签终端，支持本地与SSH会话',
       viewTerminalPrimary: '新建本地标签',
+      sidebarTerminalTitle: '终端快捷操作',
+      sidebarRecentTitle: '最近连接',
+      sidebarConnectionsTitle: '连接工作台',
+      sidebarConnectionsText: '集中管理保存的 SSH 配置，并从右侧直接编辑或连接。',
+      sidebarConnectionsActionsTitle: '快捷操作',
+      sidebarTransferTitle: '文件传输',
+      sidebarTransferText: '查看双面板 SFTP 队列，并在需要时恢复中断任务。',
+      sidebarTransferStatusTitle: '队列状态',
+      sidebarMonitorTitle: '系统监控',
+      sidebarMonitorText: '监控已改为独立工作区页面，方便专注查看 CPU、内存和磁盘状态。',
+      sidebarOpenConnections: 'SSH配置',
       settingsSaved: '设置已保存',
       settingsSaveFailed: '设置保存失败',
       statusMonitorShown: '系统监控已显示',
@@ -477,6 +519,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       navHistory: 'History',
       navAudit: 'Audit',
       navSettings: 'Settings',
+      navMonitor: 'Monitor',
+      menuLabel: 'Menu',
+      menuGroupConnections: 'Connections',
+      menuGroupWorkspace: 'Workspace',
+      menuGroupPreferences: 'Preferences',
+      currentTabPrefix: 'Current tab',
+      currentPagePrefix: 'Current page',
       monitorOn: 'Monitor: On',
       monitorOff: 'Monitor: Off',
       btnOpenHistory: 'History',
@@ -629,9 +678,23 @@ document.addEventListener('DOMContentLoaded', async () => {
       viewSettingsTitle: 'Settings',
       viewSettingsSubtitle: 'Terminal display, default shell, and SSH reconnect behavior',
       viewSettingsPrimary: 'Save Settings',
+      viewMonitorTitle: 'System Monitor',
+      viewMonitorSubtitle: 'Track CPU, memory, and disk status in real time',
+      viewMonitorPrimary: 'Back to Terminal',
       viewTerminalTitle: 'Terminal',
       viewTerminalSubtitle: 'Multi-tab terminal with local and SSH sessions',
       viewTerminalPrimary: 'New Local Tab',
+      sidebarTerminalTitle: 'Terminal Actions',
+      sidebarRecentTitle: 'Recent Connections',
+      sidebarConnectionsTitle: 'Connections Workspace',
+      sidebarConnectionsText: 'Manage saved SSH profiles and edit or connect from the main workspace.',
+      sidebarConnectionsActionsTitle: 'Quick Actions',
+      sidebarTransferTitle: 'Transfer Workspace',
+      sidebarTransferText: 'Review the dual-pane SFTP queue and resume interrupted jobs when needed.',
+      sidebarTransferStatusTitle: 'Queue Status',
+      sidebarMonitorTitle: 'System Monitor',
+      sidebarMonitorText: 'Monitoring now lives in its own workspace so terminal tabs stay focused.',
+      sidebarOpenConnections: 'SSH Configs',
       settingsSaved: 'Settings saved',
       settingsSaveFailed: 'Failed to save settings',
       statusMonitorShown: 'System monitor shown',
@@ -674,6 +737,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (els.navHistory) els.navHistory.textContent = t('navHistory');
     if (els.navAudit) els.navAudit.textContent = t('navAudit');
     if (els.navSettings) els.navSettings.textContent = t('navSettings');
+    if (els.navMonitor) els.navMonitor.textContent = t('navMonitor');
+    if (els.btnAppMenu) els.btnAppMenu.textContent = t('menuLabel');
+    setText('#app-menu .menu-group:nth-child(1) .menu-group-title', 'menuGroupConnections');
+    setText('#app-menu .menu-group:nth-child(2) .menu-group-title', 'menuGroupWorkspace');
+    setText('#app-menu .menu-group:nth-child(3) .menu-group-title', 'menuGroupPreferences');
     if (els.btnOpenHistory) els.btnOpenHistory.textContent = t('btnOpenHistory');
     if (els.btnOpenSettings) els.btnOpenSettings.textContent = t('btnOpenSettings');
     if (els.btnSaveSession) els.btnSaveSession.textContent = t('btnSaveSession');
@@ -695,6 +763,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (els.btnAuditClear) els.btnAuditClear.textContent = t('btnAuditClear');
     if (els.btnTransferRecover) els.btnTransferRecover.textContent = t('btnTransferRecover');
     if (els.btnCloseR2R) els.btnCloseR2R.textContent = t('btnCloseR2R');
+    setText('#sidebar-terminal-title', 'sidebarTerminalTitle');
+    setText('#sidebar-recent-title', 'sidebarRecentTitle');
+    setText('#sidebar-connections-title', 'sidebarConnectionsTitle');
+    setText('#sidebar-connections-text', 'sidebarConnectionsText');
+    setText('#sidebar-connections-actions-title', 'sidebarConnectionsActionsTitle');
+    setText('#sidebar-transfer-title', 'sidebarTransferTitle');
+    setText('#sidebar-transfer-text', 'sidebarTransferText');
+    setText('#sidebar-transfer-status-title', 'sidebarTransferStatusTitle');
+    setText('#sidebar-monitor-title', 'sidebarMonitorTitle');
+    setText('#sidebar-monitor-text', 'sidebarMonitorText');
+    if (els.sidebarNewLocal) els.sidebarNewLocal.textContent = t('viewTerminalPrimary');
+    if (els.sidebarNewSsh) els.sidebarNewSsh.textContent = t('actionOpenSsh');
+    if (els.sidebarOpenConnections) els.sidebarOpenConnections.textContent = t('sidebarOpenConnections');
+    if (els.sidebarConnectionsNewSsh) els.sidebarConnectionsNewSsh.textContent = t('actionOpenSsh');
+    if (els.sidebarConnectionsNewConfig) els.sidebarConnectionsNewConfig.textContent = t('viewConnectionsPrimary');
+    if (els.sidebarTransferRecover) els.sidebarTransferRecover.textContent = t('btnTransferRecover');
+    if (els.sidebarTransferTerminal) els.sidebarTransferTerminal.textContent = t('viewTransferPrimary');
+    if (els.sidebarMonitorTerminal) els.sidebarMonitorTerminal.textContent = t('viewMonitorPrimary');
+    if (els.btnMonitorTerminal) els.btnMonitorTerminal.textContent = t('viewMonitorPrimary');
+    setText('#monitor-panel .panel-title', 'viewMonitorTitle');
+    setText('#monitor-panel .panel-subtitle', 'viewMonitorSubtitle');
 
     setText('#connections-panel .panel-title', 'connPanelTitle');
     setText('#connections-panel .panel-subtitle', 'connPanelSubtitle');
@@ -831,20 +920,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentLocale = locale === 'en-US' ? 'en-US' : 'zh-CN';
     document.documentElement.setAttribute('lang', currentLocale === 'en-US' ? 'en' : 'zh-CN');
     applyI18nStaticTexts();
-    updateWorkspaceHeader((els.r2rModal && els.r2rModal.classList.contains('show'))
-      ? 'transfer'
-      : (els.historyModal && els.historyModal.classList.contains('show'))
-        ? 'history'
-        : (els.auditModal && els.auditModal.classList.contains('show'))
-          ? 'audit'
-          : (els.settingsModal && els.settingsModal.classList.contains('show'))
-            ? 'settings'
-            : (els.connectionsPanel && els.connectionsPanel.classList.contains('show'))
-              ? 'connections'
-              : 'terminal');
-    updateMonitorNavState(!els.sidebar.classList.contains('hidden'));
+    updateWorkspaceHeader(activeWorkspaceView);
     updateTransferQueueSummary();
     setTransferLastResult('');
+    renderContextSidebar(activeWorkspaceView);
+    updateToolbarContext();
     setupR2ROptions(els.r2rLeftConfig);
     setupR2ROptions(els.r2rRightConfig);
     renderR2RQuickNav('left');
@@ -1019,6 +1099,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         els.transferFailedDetail.classList.add('hidden');
       }
     }
+    renderContextSidebar(activeWorkspaceView);
   }
 
   function setTransferLastResult(message, level = 'info') {
@@ -1031,6 +1112,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
     els.transferLastResult.textContent = lr(`最近结果: ${message || '-'}`, `Last result: ${message || '-'}`);
     els.transferLastResult.style.color = colors[level] || colors.info;
+    if (els.sidebarTransferResult) {
+      els.sidebarTransferResult.textContent = els.transferLastResult.textContent;
+    }
   }
 
   function transferRequestLabel(req) {
@@ -1402,8 +1486,131 @@ document.addEventListener('DOMContentLoaded', async () => {
     replaceTerminalInputLine(list[terminalShellState.historyCursor] || '');
   }
 
+  function getTabDisplayTitle(tab) {
+    if (!tab) return 'Local';
+    if (tab.type !== 'ssh') {
+      return String(tab.title || 'Local');
+    }
+    const target = normalizeSshTarget(tab.lastConnectPayload || tab.sshConfig || {});
+    const host = String((target && target.host) || '').trim();
+    const user = String((target && target.username) || '').trim();
+    const alias = String(tab.title || '').trim();
+    const userHost = user && host ? `${user}@${host}` : '';
+    if (alias && alias !== userHost) return alias;
+    if (host) return host;
+    if (userHost) return userHost;
+    if (alias) return alias;
+    return String(tab.id || 'SSH');
+  }
+
+  function getNavIdForView(view) {
+    switch (view) {
+      case 'connections':
+        return 'nav-connections';
+      case 'transfer':
+        return 'nav-transfer';
+      case 'history':
+        return 'nav-history';
+      case 'audit':
+        return 'nav-audit';
+      case 'settings':
+        return 'nav-settings';
+      case 'monitor':
+        return 'nav-monitor';
+      case 'terminal':
+      default:
+        return 'nav-terminal';
+    }
+  }
+
+  function getViewTitle(view) {
+    switch (view) {
+      case 'connections':
+        return t('viewConnectionsTitle');
+      case 'transfer':
+        return t('viewTransferTitle');
+      case 'history':
+        return t('viewHistoryTitle');
+      case 'audit':
+        return t('viewAuditTitle');
+      case 'settings':
+        return t('viewSettingsTitle');
+      case 'monitor':
+        return t('viewMonitorTitle');
+      case 'terminal':
+      default:
+        return t('viewTerminalTitle');
+    }
+  }
+
+  function setAppMenuOpen(open) {
+    if (!els.appMenu) return;
+    els.appMenu.classList.toggle('hidden', !open);
+  }
+
+  function updateToolbarContext() {
+    if (!els.toolbarActiveContext) return;
+    if (activeWorkspaceView === 'terminal') {
+      const currentTab = getCurrentTab();
+      els.toolbarActiveContext.textContent = `${t('currentTabPrefix')}: ${getTabDisplayTitle(currentTab)}`;
+      return;
+    }
+    els.toolbarActiveContext.textContent = `${t('currentPagePrefix')}: ${getViewTitle(activeWorkspaceView)}`;
+  }
+
+  function renderRecentConnectionsSidebar() {
+    if (!els.sidebarRecentConnections) return;
+    els.sidebarRecentConnections.innerHTML = '';
+    const recent = (cachedConfigs || [])
+      .filter((item) => item && item.host && item.username)
+      .slice(0, 6);
+    if (!recent.length) {
+      els.sidebarRecentConnections.innerHTML = `<div class="sidebar-empty">${escapeHtml(lr('暂无已保存连接', 'No saved connections'))}</div>`;
+      return;
+    }
+    recent.forEach((config) => {
+      const button = document.createElement('button');
+      button.className = 'sidebar-list-item';
+      button.textContent = String(config.name || config.host || `${config.username}@${config.host}`);
+      button.addEventListener('click', async () => {
+        setActiveNav('nav-connections');
+        showWorkspaceView('connections');
+        await loadConnectionEditorFromConfig(config);
+        await connectFromConnectionEditor();
+      });
+      els.sidebarRecentConnections.appendChild(button);
+    });
+  }
+
+  function renderContextSidebar(view = activeWorkspaceView) {
+    const paneMap = {
+      terminal: els.sidebarTerminal,
+      connections: els.sidebarConnections,
+      transfer: els.sidebarTransfer,
+      monitor: els.sidebarMonitor
+    };
+    const shouldShowSidebar = ['terminal', 'connections', 'transfer', 'monitor'].includes(view);
+    if (els.sidebar) {
+      els.sidebar.classList.toggle('hidden', !shouldShowSidebar);
+    }
+    Object.values(paneMap).forEach((pane) => {
+      if (pane) pane.classList.add('hidden');
+    });
+    const activePane = paneMap[view];
+    if (activePane) {
+      activePane.classList.remove('hidden');
+    }
+    renderRecentConnectionsSidebar();
+    if (els.sidebarTransferSummary && els.transferQueueSummary) {
+      els.sidebarTransferSummary.textContent = els.transferQueueSummary.textContent || lr('队列: 0', 'Queue: 0');
+    }
+    if (els.sidebarTransferResult && els.transferLastResult) {
+      els.sidebarTransferResult.textContent = els.transferLastResult.textContent || lr('最近结果: -', 'Latest result: -');
+    }
+  }
+
   function setActiveNav(targetId) {
-    const navIds = ['nav-terminal', 'nav-connections', 'nav-transfer', 'nav-history', 'nav-audit', 'nav-settings'];
+    const navIds = ['nav-terminal', 'nav-connections', 'nav-transfer', 'nav-history', 'nav-audit', 'nav-settings', 'nav-monitor'];
     navIds.forEach((id) => {
       const el = document.getElementById(id);
       if (el) {
@@ -1412,22 +1619,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  function updateMonitorNavState(visible) {
-    if (!els.navMonitor) return;
-    els.navMonitor.textContent = visible ? t('monitorOn') : t('monitorOff');
-    els.navMonitor.classList.toggle('active', visible);
-  }
-
-  function toggleMonitorVisibility(force) {
-    const shouldShow = typeof force === 'boolean' ? force : els.sidebar.classList.contains('hidden');
-    els.sidebar.classList.toggle('hidden', !shouldShow);
-    updateMonitorNavState(shouldShow);
-    setStatus(shouldShow ? t('statusMonitorShown') : t('statusMonitorHidden'), 'info');
-    return shouldShow;
-  }
-
   function dockPanelsIntoWorkspace() {
-    const panels = [els.connectionsPanel, els.r2rModal, els.historyModal, els.auditModal, els.settingsModal];
+    const panels = [els.monitorPanel, els.connectionsPanel, els.r2rModal, els.historyModal, els.auditModal, els.settingsModal];
     panels.forEach((panel) => {
       if (!panel || !els.workspace) return;
       panel.classList.add('docked-panel');
@@ -1436,17 +1629,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function showWorkspaceView(view) {
-    const isTerminal = view === 'terminal';
-    if (els.tabsBar) els.tabsBar.classList.toggle('hidden', !isTerminal);
+    activeWorkspaceView = view || 'terminal';
+    const isTerminal = activeWorkspaceView === 'terminal';
+    if (els.tabsBar) els.tabsBar.classList.remove('hidden');
     if (els.terminalContainer) els.terminalContainer.classList.toggle('hidden', !isTerminal);
     if (els.workspaceViewHeader) els.workspaceViewHeader.classList.toggle('hidden', isTerminal);
 
-    const showTransfer = view === 'transfer';
-    const showHistory = view === 'history';
-    const showAudit = view === 'audit';
-    const showSettings = view === 'settings';
-    const showConnections = view === 'connections';
+    const showTransfer = activeWorkspaceView === 'transfer';
+    const showHistory = activeWorkspaceView === 'history';
+    const showAudit = activeWorkspaceView === 'audit';
+    const showSettings = activeWorkspaceView === 'settings';
+    const showConnections = activeWorkspaceView === 'connections';
+    const showMonitor = activeWorkspaceView === 'monitor';
 
+    if (els.monitorPanel) {
+      els.monitorPanel.classList.toggle('show', showMonitor);
+      els.monitorPanel.classList.toggle('hidden', !showMonitor);
+    }
     els.connectionsPanel.classList.toggle('show', showConnections);
     els.connectionsPanel.classList.toggle('hidden', !showConnections);
     els.r2rModal.classList.toggle('show', showTransfer);
@@ -1459,8 +1658,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (showTransfer) {
       applyR2RSplitRatio(r2rSplitRatio);
     }
-    updateWorkspaceHeader(view);
-    updateWorkspaceSecondaryActions(view);
+    updateWorkspaceHeader(activeWorkspaceView);
+    updateWorkspaceSecondaryActions(activeWorkspaceView);
+    renderContextSidebar(activeWorkspaceView);
+    updateToolbarContext();
   }
 
   function updateWorkspaceSecondaryActions(view) {
@@ -1527,6 +1728,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       els.workspacePrimaryAction.textContent = t('viewSettingsPrimary');
       workspacePrimaryActionHandler = async () => {
         els.btnSettingsSave.click();
+      };
+      return;
+    }
+    if (view === 'monitor') {
+      els.workspaceViewTitle.textContent = t('viewMonitorTitle');
+      els.workspaceViewSubtitle.textContent = t('viewMonitorSubtitle');
+      els.workspacePrimaryAction.textContent = t('viewMonitorPrimary');
+      workspacePrimaryActionHandler = () => {
+        setActiveNav('nav-terminal');
+        showWorkspaceView('terminal');
+        term.focus();
       };
       return;
     }
@@ -1834,23 +2046,25 @@ document.addEventListener('DOMContentLoaded', async () => {
       },
       {
         id: 'toggle-monitor',
-        label: lr('切换监控显示/隐藏', 'Toggle monitor visibility'),
-        keywords: 'monitor sidebar',
+        label: lr('打开系统监控', 'Open system monitor'),
+        keywords: 'monitor workspace',
         run: () => {
-          toggleMonitorVisibility();
+          setActiveNav('nav-monitor');
+          showWorkspaceView('monitor');
         }
       }
     ]);
 
     tabs.forEach((tab, idx) => {
       const type = tab.type === 'ssh' ? 'SSH' : 'Local';
+      const tabLabel = getTabDisplayTitle(tab);
       actions.push({
         id: `switch-tab-${tab.id}`,
         label: lr(
-          `切换到标签 ${idx + 1}: ${tab.title || tab.id}`,
-          `Switch to tab ${idx + 1}: ${tab.title || tab.id}`
+          `切换到标签 ${idx + 1}: ${tabLabel}`,
+          `Switch to tab ${idx + 1}: ${tabLabel}`
         ),
-        keywords: `tab switch ${type} ${tab.title || tab.id} ${idx + 1}`,
+        keywords: `tab switch ${type} ${tabLabel} ${idx + 1}`,
         shortcut: idx < 9 ? `${navigator.platform.includes('Mac') ? 'Cmd' : 'Ctrl'}+${idx + 1}` : '',
         run: () => switchToTab(tab.id)
       });
@@ -2134,6 +2348,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function openHistoryModal() {
+    setActiveNav('nav-history');
     showWorkspaceView('history');
     els.historySearch.value = '';
     await renderHistoryList('');
@@ -2141,6 +2356,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function openAuditModal() {
+    setActiveNav('nav-audit');
     showWorkspaceView('audit');
     els.auditSearch.value = '';
     await renderAuditList('');
@@ -2204,6 +2420,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function openSettingsModal() {
+    setActiveNav('nav-settings');
     const settings = await window.terminal.getSettings();
     currentSettings = settings || {};
     els.settingFontFamily.value = currentSettings.fontFamily || 'Monaco, Menlo, "Courier New", monospace';
@@ -2440,7 +2657,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const item = document.createElement('div');
       item.className = `tab-item ${tab.id === currentTabId ? 'active' : ''}`;
       item.dataset.tabId = tab.id;
-      item.textContent = `${tab.type === 'ssh' ? '🔐' : '💻'} ${tab.title || tab.id}`;
+      item.textContent = `${tab.type === 'ssh' ? '🔐' : '💻'} ${getTabDisplayTitle(tab)}`;
       item.addEventListener('click', () => switchToTab(tab.id));
 
       const close = document.createElement('span');
@@ -2453,6 +2670,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       item.appendChild(close);
       els.tabsList.appendChild(item);
     });
+    updateToolbarContext();
   }
 
   async function switchToTab(tabId) {
@@ -2476,7 +2694,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
       syncTerminalSizeStable(true);
-      setStatus(lr(`当前标签: ${tab.title}`, `Current tab: ${tab.title}`), 'success');
+      setStatus(lr(`当前标签: ${getTabDisplayTitle(tab)}`, `Current tab: ${getTabDisplayTitle(tab)}`), 'success');
       return;
     }
 
@@ -2524,7 +2742,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       refreshAuthFields();
       openModal();
-      setStatus(lr(`标签 ${tab.title} 需要重新连接SSH`, `Tab ${tab.title} requires SSH reconnection`), 'info');
+      setStatus(lr(`标签 ${getTabDisplayTitle(tab)} 需要重新连接SSH`, `Tab ${getTabDisplayTitle(tab)} requires SSH reconnection`), 'info');
     }
   }
 
@@ -2570,9 +2788,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   function handleTabSwitchShortcut(event) {
     if (!event || event.type !== 'keydown') return false;
     const key = String(event.key || '');
+    const lowerKey = key.toLowerCase();
     const noAlt = !event.altKey;
     const onlyCtrl = event.ctrlKey && !event.metaKey && noAlt;
     const onlyMeta = event.metaKey && !event.ctrlKey && noAlt;
+
+    if ((onlyCtrl || onlyMeta) && !event.shiftKey && lowerKey === 'w') {
+      event.preventDefault();
+      event.stopPropagation();
+      closeTab(currentTabId);
+      return true;
+    }
 
     // Next / previous tab
     if (onlyCtrl && key === 'Tab' && !event.shiftKey) {
@@ -2796,6 +3022,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupR2ROptions(els.r2rRightConfig);
     setupJumpConfigOptions(editingConfigId || (els.savedSelect ? els.savedSelect.value : ''), els.connJumpConfig ? els.connJumpConfig.value : '');
     setupSshModalJumpOptions(els.inputJumpConfig ? els.inputJumpConfig.value : '');
+    renderContextSidebar(activeWorkspaceView);
   }
 
   function setupJumpConfigOptions(excludeId, currentValue = '') {
@@ -3937,15 +4164,38 @@ document.addEventListener('DOMContentLoaded', async () => {
   els.btnOpenHistory.addEventListener('click', () => {
     openHistoryModal();
   });
+  if (els.btnAppMenu) {
+    els.btnAppMenu.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setAppMenuOpen(!!(els.appMenu && els.appMenu.classList.contains('hidden')));
+    });
+  }
+  if (els.appMenu) {
+    els.appMenu.addEventListener('click', (event) => {
+      if (event.target && event.target.tagName === 'BUTTON') {
+        setAppMenuOpen(false);
+      }
+    });
+  }
+  document.addEventListener('click', (event) => {
+    if (!els.appMenu || !els.btnAppMenu) return;
+    if (els.appMenu.classList.contains('hidden')) return;
+    const target = event.target;
+    if (els.appMenu.contains(target) || els.btnAppMenu.contains(target)) return;
+    setAppMenuOpen(false);
+  });
   els.workspacePrimaryAction.addEventListener('click', async () => {
     if (typeof workspacePrimaryActionHandler === 'function') {
       await workspacePrimaryActionHandler();
     }
   });
-  els.workspaceActionOpenSsh.addEventListener('click', () => {
-    pendingTabForConnect = null;
-    openModal();
-  });
+  if (els.workspaceActionOpenSsh) {
+    els.workspaceActionOpenSsh.addEventListener('click', () => {
+      pendingTabForConnect = null;
+      openModal();
+    });
+  }
   if (els.workspaceActionOpenConnections) {
     els.workspaceActionOpenConnections.addEventListener('click', () => {
       setActiveNav('nav-connections');
@@ -3958,24 +4208,30 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
   }
-  els.workspaceActionOpenTransfer.addEventListener('click', () => {
-    setActiveNav('nav-transfer');
-    showWorkspaceView('transfer');
-  });
-  els.workspaceActionOpenHistory.addEventListener('click', () => {
-    setActiveNav('nav-history');
-    openHistoryModal();
-  });
+  if (els.workspaceActionOpenTransfer) {
+    els.workspaceActionOpenTransfer.addEventListener('click', () => {
+      setActiveNav('nav-transfer');
+      showWorkspaceView('transfer');
+    });
+  }
+  if (els.workspaceActionOpenHistory) {
+    els.workspaceActionOpenHistory.addEventListener('click', () => {
+      setActiveNav('nav-history');
+      openHistoryModal();
+    });
+  }
   if (els.workspaceActionOpenAudit) {
     els.workspaceActionOpenAudit.addEventListener('click', () => {
       setActiveNav('nav-audit');
       openAuditModal();
     });
   }
-  els.workspaceActionOpenSettings.addEventListener('click', () => {
-    setActiveNav('nav-settings');
-    openSettingsModal();
-  });
+  if (els.workspaceActionOpenSettings) {
+    els.workspaceActionOpenSettings.addEventListener('click', () => {
+      setActiveNav('nav-settings');
+      openSettingsModal();
+    });
+  }
   if (els.workspaceActionDisconnect) {
     els.workspaceActionDisconnect.addEventListener('click', async () => {
       const tab = getCurrentTab();
@@ -4034,8 +4290,60 @@ document.addEventListener('DOMContentLoaded', async () => {
     openSettingsModal();
   });
   els.navMonitor.addEventListener('click', () => {
-    toggleMonitorVisibility();
+    setActiveNav('nav-monitor');
+    showWorkspaceView('monitor');
   });
+  if (els.btnMonitorTerminal) {
+    els.btnMonitorTerminal.addEventListener('click', () => {
+      setActiveNav('nav-terminal');
+      showWorkspaceView('terminal');
+      term.focus();
+    });
+  }
+  if (els.sidebarNewLocal) {
+    els.sidebarNewLocal.addEventListener('click', () => els.btnLocal.click());
+  }
+  if (els.sidebarNewSsh) {
+    els.sidebarNewSsh.addEventListener('click', () => {
+      if (els.workspaceActionOpenSsh) els.workspaceActionOpenSsh.click();
+    });
+  }
+  if (els.sidebarOpenConnections) {
+    els.sidebarOpenConnections.addEventListener('click', () => {
+      setActiveNav('nav-connections');
+      showWorkspaceView('connections');
+    });
+  }
+  if (els.sidebarConnectionsNewSsh) {
+    els.sidebarConnectionsNewSsh.addEventListener('click', () => {
+      pendingTabForConnect = null;
+      openModal();
+    });
+  }
+  if (els.sidebarConnectionsNewConfig) {
+    els.sidebarConnectionsNewConfig.addEventListener('click', () => {
+      clearConnectionEditor();
+    });
+  }
+  if (els.sidebarTransferRecover) {
+    els.sidebarTransferRecover.addEventListener('click', () => {
+      if (els.btnTransferRecover) els.btnTransferRecover.click();
+    });
+  }
+  if (els.sidebarTransferTerminal) {
+    els.sidebarTransferTerminal.addEventListener('click', () => {
+      setActiveNav('nav-terminal');
+      showWorkspaceView('terminal');
+      term.focus();
+    });
+  }
+  if (els.sidebarMonitorTerminal) {
+    els.sidebarMonitorTerminal.addEventListener('click', () => {
+      setActiveNav('nav-terminal');
+      showWorkspaceView('terminal');
+      term.focus();
+    });
+  }
   els.btnHistoryClose.addEventListener('click', closeHistoryModal);
   els.historySearch.addEventListener('input', () => {
     renderHistoryList(els.historySearch.value);
@@ -4291,7 +4599,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       const selected = getSelectedConfig();
       if (selected) {
         await loadConnectionEditorFromConfig(selected);
-        await connectFromConnectionEditor();
+        setStatus(
+          lr(`已选中配置: ${selected.name || selected.host}`, `Selected profile: ${selected.name || selected.host}`),
+          'info'
+        );
       }
     });
     els.savedSelect.addEventListener('dblclick', async () => {
@@ -4389,6 +4700,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     syncTerminalSizeToBackend();
     applyR2RSplitRatio(r2rSplitRatio);
   });
+  window.terminal.onCloseCurrentTab(() => {
+    if (!currentTabId) return;
+    closeTab(currentTabId);
+  });
   window.addEventListener('keydown', (event) => {
     if (event.defaultPrevented) return;
     if (isCommandPaletteShortcut(event)) {
@@ -4433,7 +4748,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   showWorkspaceView('terminal');
   showQuickReconnect(false);
   setActiveNav('nav-terminal');
-  updateMonitorNavState(!els.sidebar.classList.contains('hidden'));
   loadPendingTransferRecovery();
   updateTransferQueueSummary();
   if (pendingTransferRecovery && pendingTransferRecovery.request) {

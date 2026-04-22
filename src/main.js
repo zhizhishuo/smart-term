@@ -2147,6 +2147,20 @@ function createWindow() {
   // 加载index.html
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
 
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    const key = String(input && input.key ? input.key : '').toLowerCase();
+    const isCloseTabShortcut = input
+      && input.type === 'keyDown'
+      && key === 'w'
+      && !input.control
+      && !input.alt
+      && !input.shift
+      && !!input.meta;
+    if (!isCloseTabShortcut) return;
+    event.preventDefault();
+    mainWindow.webContents.send('app:close-current-tab');
+  });
+
   // 将渲染进程控制台输出转发到主进程，便于定位黑屏问题
   mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
     console.log(`[renderer:${level}] ${message} (${sourceId}:${line})`);
