@@ -37,6 +37,74 @@ document.addEventListener('DOMContentLoaded', async () => {
   term.loadAddon(fitAddon);
   term.open(document.getElementById('terminal'));
   fitAddon.fit();
+  const terminalModeState = {
+    isAlternateScreen: false,
+    pendingAltScreenClearTimer: 0,
+    pendingTransitionRefreshFrame: 0,
+    pendingNormalScreenRefreshTimer: 0,
+    pendingScrollToBottom: false
+  };
+
+  function scheduleTerminalRefresh({ scrollToBottom = false } = {}) {
+    terminalModeState.pendingScrollToBottom = terminalModeState.pendingScrollToBottom || scrollToBottom;
+    if (terminalModeState.pendingTransitionRefreshFrame) {
+      cancelAnimationFrame(terminalModeState.pendingTransitionRefreshFrame);
+    }
+    terminalModeState.pendingTransitionRefreshFrame = requestAnimationFrame(() => {
+      terminalModeState.pendingTransitionRefreshFrame = 0;
+      if (terminalModeState.pendingScrollToBottom && term.buffer.active.type === 'normal') {
+        term.scrollToBottom();
+      }
+      terminalModeState.pendingScrollToBottom = false;
+      term.refresh(0, Math.max(0, term.rows - 1));
+    });
+  }
+
+  function scheduleNormalScreenSettledRefresh() {
+    if (terminalModeState.pendingNormalScreenRefreshTimer) {
+      clearTimeout(terminalModeState.pendingNormalScreenRefreshTimer);
+    }
+    terminalModeState.pendingNormalScreenRefreshTimer = setTimeout(() => {
+      terminalModeState.pendingNormalScreenRefreshTimer = 0;
+      if (term.buffer.active.type !== 'normal') return;
+      scheduleTerminalRefresh({ scrollToBottom: false });
+    }, 40);
+  }
+
+  function scheduleAlternateScreenEntryClear() {
+    if (terminalModeState.pendingAltScreenClearTimer) {
+      clearTimeout(terminalModeState.pendingAltScreenClearTimer);
+    }
+    terminalModeState.pendingAltScreenClearTimer = setTimeout(() => {
+      terminalModeState.pendingAltScreenClearTimer = 0;
+      if (term.buffer.active.type !== 'alternate') return;
+      // xterm.js 1049 handling can leave stale rows visible on entry, so clear
+      // once per actual transition after the alternate buffer becomes active.
+      term.write('\x1b[H\x1b[2J');
+    }, 0);
+  }
+
+  function updateTerminalModeState(nextType) {
+    const isAlternate = nextType === 'alternate';
+    if (terminalModeState.isAlternateScreen === isAlternate) return;
+    terminalModeState.isAlternateScreen = isAlternate;
+    const current = getCurrentTab();
+    if (current) {
+      current.isAlternateScreenActive = isAlternate;
+      current.hasUsedAlternateScreen = current.hasUsedAlternateScreen || isAlternate;
+    }
+    if (isAlternate) {
+      scheduleAlternateScreenEntryClear();
+      return;
+    }
+    scheduleNormalScreenSettledRefresh();
+  }
+
+  if (term.buffer && typeof term.buffer.onBufferChange === 'function') {
+    term.buffer.onBufferChange((buffer) => {
+      updateTerminalModeState(buffer && buffer.type ? buffer.type : 'normal');
+    });
+  }
 
   const els = {
     status: document.getElementById('status'),
@@ -258,6 +326,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let reconnectStateActive = false;
   let reconnectInputWarned = false;
   const pendingOutputBySessionId = new Map();
+  const sshOscCarryBySessionId = new Map();
   const sshWarmupBytesBySessionId = new Map();
   const sshWarmupCarryBySessionId = new Map();
   const sshWarmupFlushTimerBySessionId = new Map();
@@ -2261,6 +2330,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     return tabs.find((t) => t.id === currentTabId) || null;
   }
 
+  function isAlternateScreenActive() {
+    return terminalModeState.isAlternateScreen || term.buffer.active.type === 'alternate';
+  }
+
   function isCurrentSshTab() {
     const tab = getCurrentTab();
     return !!(tab && tab.type === 'ssh');
@@ -2319,8 +2392,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   function syncTerminalSizeStable(reflow = false) {
     syncTerminalSizeToBackend(reflow);
     requestAnimationFrame(() => syncTerminalSizeToBackend(reflow));
-    setTimeout(() => syncTerminalSizeToBackend(reflow), 60);
-    setTimeout(() => syncTerminalSizeToBackend(reflow), 180);
   }
 
   function showTransferProgress(title) {
@@ -2463,7 +2534,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   function createTab(tab) {
     const normalized = {
       ...tab,
-      outputBuffer: typeof tab.outputBuffer === 'string' ? tab.outputBuffer : ''
+      outputBuffer: typeof tab.outputBuffer === 'string' ? tab.outputBuffer : '',
+      hasUsedAlternateScreen: !!tab.hasUsedAlternateScreen,
+      isAlternateScreenActive: !!tab.isAlternateScreenActive
     };
     if (normalized.type === 'ssh' && normalized.sessionId) {
       const sid = String(normalized.sessionId || '');
@@ -2485,6 +2558,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function appendOutputToTab(tab, data) {
     if (!tab) return;
+    if (tab.isAlternateScreenActive) return;
     tab.outputBuffer = trimTerminalBuffer(`${tab.outputBuffer || ''}${String(data || '')}`);
   }
 
@@ -2498,6 +2572,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     sshWarmupBytesBySessionId.set(sid, SSH_WARMUP_SANITIZE_BYTES);
     sshWarmupCarryBySessionId.delete(sid);
+  }
+
+  function finishSshSessionWarmup(sessionId) {
+    const sid = String(sessionId || '');
+    if (!sid) return '';
+    const prevTimer = sshWarmupFlushTimerBySessionId.get(sid);
+    if (prevTimer) {
+      clearTimeout(prevTimer);
+      sshWarmupFlushTimerBySessionId.delete(sid);
+    }
+    sshWarmupBytesBySessionId.delete(sid);
+    return sanitizeSshWarmupStreamChunk(sid, '', true);
   }
 
   function sanitizeSshLoginArtifactChunk(text) {
@@ -2517,20 +2603,58 @@ document.addEventListener('DOMContentLoaded', async () => {
     return out;
   }
 
-  function sanitizeSshOutputAlways(text) {
-    const source = String(text || '');
-    if (!source) return source;
-    let out = source;
-    // Hard filter: remove "DD HH:MM:SS YYYY from x.x.x.x" artifact lines in SSH output.
-    out = out.replace(
-      /(^|[\r\n])([^\r\n]*[#$])\s+\d{1,2}\s\d{2}:\d{2}:\d{2}\s\d{4}\sfrom [^\r\n]*/g,
-      '$1$2'
-    );
-    out = out.replace(
-      /(^|[\r\n])\s*\d{1,2}\s\d{2}:\d{2}:\d{2}\s\d{4}\sfrom [^\r\n]*(?=$|[\r\n])/g,
-      '$1'
-    );
-    return out;
+  function stripLeakedSshPromptArtifacts(sessionId, text, isFinalChunk = false) {
+    const sid = String(sessionId || '');
+    const chunk = String(text || '');
+    if (!sid) return chunk;
+
+    let source = `${sshOscCarryBySessionId.get(sid) || ''}${chunk}`;
+    sshOscCarryBySessionId.delete(sid);
+    if (!source) return '';
+
+    let out = '';
+    let cursor = 0;
+    while (cursor < source.length) {
+      const oscIndex = source.indexOf('\x1b]1', cursor);
+      if (oscIndex < 0) break;
+      const command = source[oscIndex + 3];
+      if (!['0', '1', '2'].includes(command)) {
+        cursor = oscIndex + 3;
+        continue;
+      }
+      out += source.slice(cursor, oscIndex);
+
+      const belIndex = source.indexOf('\x07', oscIndex + 4);
+      const stIndex = source.indexOf('\x1b\\', oscIndex + 4);
+      let endIndex = -1;
+      let terminatorLen = 0;
+      if (belIndex >= 0 && (stIndex < 0 || belIndex < stIndex)) {
+        endIndex = belIndex;
+        terminatorLen = 1;
+      } else if (stIndex >= 0) {
+        endIndex = stIndex;
+        terminatorLen = 2;
+      }
+
+      if (endIndex < 0) {
+        if (!isFinalChunk) {
+          sshOscCarryBySessionId.set(sid, source.slice(oscIndex).slice(-256));
+          return out;
+        }
+        out += source.slice(oscIndex);
+        return out;
+      }
+
+      // Drop OSC 10/11/12 prompt color queries/settings before they hit xterm.
+      cursor = endIndex + terminatorLen;
+    }
+    source = out + source.slice(cursor);
+
+    // Only strip printable leak text like "]10;rgb:d4d4/..." after it has already
+    // escaped into the stream; do not touch valid control sequences needed by TUIs.
+    return source
+      .replace(/\]1(?:0|1|2);rgb:[0-9a-f]{2,4}(?:\/[0-9a-f]{2,4}){2}/gi, '')
+      .replace(/(^|[;:])rgb:[0-9a-f]{2,4}(?:\/[0-9a-f]{2,4}){2}/gi, '$1');
   }
 
   function sanitizeSshWarmupStreamChunk(sessionId, text, isFinalChunk = false) {
@@ -2607,6 +2731,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  function shouldBypassSshWarmupForChunk(text) {
+    const source = String(text || '');
+    if (!source) return false;
+    return /\x1b\[\?(?:47|1047|1049)[hl]/.test(source);
+  }
+
   function normalizeIncomingTerminalData(payload) {
     if (payload && typeof payload === 'object' && Object.prototype.hasOwnProperty.call(payload, 'data')) {
       return {
@@ -2654,15 +2784,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   function restoreTabOutput(tab) {
     syncTerminalSizeToBackend(true);
     try {
-      term.reset();
-    } catch (_err) {
       term.clear();
+    } catch (_err) {
+      term.write('\x1b[2J\x1b[H');
     }
     if (tab && tab.outputBuffer) {
       term.write(tab.outputBuffer);
     }
-    syncTerminalSizeToBackend(true);
-    requestAnimationFrame(() => syncTerminalSizeToBackend(true));
+    scheduleTerminalRefresh({ scrollToBottom: true });
   }
 
   function renderTabs() {
@@ -2765,6 +2894,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (idx < 0) return;
     const closingTab = tabs[idx];
     if (closingTab && closingTab.type === 'ssh' && closingTab.sessionId) {
+      sshOscCarryBySessionId.delete(String(closingTab.sessionId || ''));
       await window.terminal.disconnectSSH({ sessionId: closingTab.sessionId });
     }
     tabs.splice(idx, 1);
@@ -2893,9 +3023,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         sshConfig: t.sshConfig || null,
         lastConnectPayload: null,
         sessionId: '',
-        outputBuffer: typeof t.outputBuffer === 'string' ? t.outputBuffer : ''
+        outputBuffer: typeof t.outputBuffer === 'string' ? t.outputBuffer : '',
+        hasUsedAlternateScreen: !!t.hasUsedAlternateScreen,
+        isAlternateScreenActive: false
       }))
-      : [{ id: `local-${Date.now()}`, type: 'local', title: 'Local', outputBuffer: '' }];
+      : [{
+        id: `local-${Date.now()}`,
+        type: 'local',
+        title: 'Local',
+        outputBuffer: '',
+        hasUsedAlternateScreen: false,
+        isAlternateScreenActive: false
+      }];
 
     currentTabId = parsed.currentTabId && tabs.find((t) => t.id === parsed.currentTabId)
       ? parsed.currentTabId
@@ -3870,7 +4009,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         },
         lastConnectPayload: payload,
         sessionId: result.sessionId || '',
-        outputBuffer: ''
+        outputBuffer: '',
+        hasUsedAlternateScreen: false,
+        isAlternateScreenActive: false
       };
       markSshSessionWarmup(newTab.sessionId);
       createTab(newTab);
@@ -3901,6 +4042,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       return;
     }
+    const currentTab = getCurrentTab();
+    if (currentTab && currentTab.type === 'ssh' && currentTab.sessionId) {
+      const sid = String(currentTab.sessionId || '');
+      if (sshWarmupBytesBySessionId.has(sid) || sshWarmupCarryBySessionId.has(sid)) {
+        const carry = finishSshSessionWarmup(sid);
+        if (carry) {
+          appendOutputToTab(currentTab, carry);
+          term.write(carry);
+        }
+      }
+    }
     trackInputLineBuffer(data);
     window.terminal.write(data);
   });
@@ -3926,6 +4078,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       return false;
     }
+    if (isAlternateScreenActive()) {
+      return true;
+    }
     if (handleTabSwitchShortcut(event)) return false;
     const onlyAlt = event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
     if (!onlyAlt) return true;
@@ -3944,18 +4099,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   window.terminal.onData((payload) => {
     const incoming = normalizeIncomingTerminalData(payload);
-    if (incoming.mode === 'ssh' && incoming.data) {
-      incoming.data = sanitizeSshOutputAlways(incoming.data);
-    }
     const targetTab = findTabForIncomingOutput(incoming);
     if (incoming.mode === 'ssh' && incoming.sessionId) {
       const sid = String(incoming.sessionId || '');
-      if (!sshWarmupBytesBySessionId.has(sid)) {
+      const bypassWarmup = shouldBypassSshWarmupForChunk(incoming.data);
+      if (bypassWarmup) {
+        const carry = finishSshSessionWarmup(sid);
+        if (carry) {
+          incoming.data = `${carry}${incoming.data}`;
+        }
+      }
+      if (!bypassWarmup && !sshWarmupBytesBySessionId.has(sid)) {
         // If data arrives before tab/session binding is complete, still enable warmup sanitize.
         markSshSessionWarmup(sid);
       }
       const remaining = sshWarmupBytesBySessionId.get(sid) || 0;
       if (remaining > 0) {
+        incoming.data = stripLeakedSshPromptArtifacts(sid, incoming.data);
         const rawLen = String(payload && payload.data ? payload.data : incoming.data).length;
         const next = Math.max(0, remaining - rawLen);
         incoming.data = sanitizeSshWarmupStreamChunk(sid, incoming.data, next <= 0);
@@ -3982,7 +4142,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (early) {
         const earlyTab = tabs.find((t) => t.type === 'ssh' && String(t.sessionId || '') === incoming.sessionId) || null;
         const warmupRemaining = sshWarmupBytesBySessionId.get(String(incoming.sessionId || '')) || 0;
-        const earlyText = warmupRemaining > 0 ? sanitizeSshLoginArtifactChunk(early) : early;
+        const earlyText = warmupRemaining > 0
+          ? sanitizeSshLoginArtifactChunk(stripLeakedSshPromptArtifacts(incoming.sessionId, early, true))
+          : early;
         appendOutputToTab(earlyTab, earlyText);
         const current = getCurrentTab();
         if (earlyTab && current && current.id === earlyTab.id) {
@@ -4000,7 +4162,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (shouldRenderIncomingOutput(incoming, targetTab)) {
       term.write(incoming.data);
     }
-    void maybeSuggestAiFixFromOutput(incoming.data);
+    if (!isAlternateScreenActive()) {
+      void maybeSuggestAiFixFromOutput(incoming.data);
+    }
   });
   window.terminal.onCwd((payload) => {
     if (!payload || typeof payload !== 'object') return;
@@ -4802,7 +4966,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     title: 'Local-1',
     lastConnectPayload: null,
     sshConfig: null,
-    outputBuffer: ''
+    outputBuffer: '',
+    hasUsedAlternateScreen: false,
+    isAlternateScreenActive: false
   }];
   currentTabId = tabs[0].id;
   renderTabs();
