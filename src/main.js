@@ -492,7 +492,27 @@ function readSSHSecretsFallback() {
 
 function writeSSHSecretsFallback(store) {
   const next = store && typeof store === 'object' && !Array.isArray(store) ? store : {};
-  fs.writeFileSync(getSSHSecretsFallbackPath(), JSON.stringify(next, null, 2), 'utf8');
+  const targetPath = getSSHSecretsFallbackPath();
+  fs.writeFileSync(targetPath, JSON.stringify(next, null, 2), { encoding: 'utf8', mode: 0o600 });
+  try {
+    fs.chmodSync(targetPath, 0o600);
+  } catch (_err) {
+    // noop
+  }
+}
+
+function normalizeSSHSecretPayload(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  return {
+    password: raw.password ? String(raw.password) : '',
+    privateKey: raw.privateKey ? String(raw.privateKey) : '',
+    passphrase: raw.passphrase ? String(raw.passphrase) : ''
+  };
+}
+
+function readSSHSecretFromFallback(configId) {
+  const store = readSSHSecretsFallback();
+  return normalizeSSHSecretPayload(store[String(configId)]);
 }
 
 function readKnownHosts() {
@@ -530,49 +550,39 @@ async function saveSSHConfigSecret(configId, secret) {
     if (secret.passphrase) payload.passphrase = String(secret.passphrase);
   }
   const hasAny = !!(payload.password || payload.privateKey || payload.passphrase);
-  if (!keytar) {
-    const store = readSSHSecretsFallback();
-    if (!hasAny) {
-      delete store[String(configId)];
-      writeSSHSecretsFallback(store);
+  const store = readSSHSecretsFallback();
+  if (!hasAny) {
+    delete store[String(configId)];
+    writeSSHSecretsFallback(store);
+    if (!keytar) {
       return { ok: true, cleared: true, fallback: true };
     }
-    store[String(configId)] = payload;
-    writeSSHSecretsFallback(store);
+    await keytar.deletePassword(SSH_SECRET_SERVICE, String(configId));
+    return { ok: true, cleared: true, fallback: true };
+  }
+
+  store[String(configId)] = payload;
+  writeSSHSecretsFallback(store);
+  if (!keytar) {
     return { ok: true, fallback: true };
   }
-  if (!hasAny) {
-    await keytar.deletePassword(SSH_SECRET_SERVICE, String(configId));
-    return { ok: true, cleared: true };
-  }
   await keytar.setPassword(SSH_SECRET_SERVICE, String(configId), JSON.stringify(payload));
-  return { ok: true };
+  return { ok: true, fallback: true };
 }
 
 async function readSSHConfigSecret(configId) {
   if (!configId) return null;
   if (!keytar) {
-    const store = readSSHSecretsFallback();
-    const raw = store[String(configId)];
-    if (!raw || typeof raw !== 'object') return null;
-    return {
-      password: raw.password ? String(raw.password) : '',
-      privateKey: raw.privateKey ? String(raw.privateKey) : '',
-      passphrase: raw.passphrase ? String(raw.passphrase) : ''
-    };
+    return readSSHSecretFromFallback(configId);
   }
   try {
     const raw = await keytar.getPassword(SSH_SECRET_SERVICE, String(configId));
-    if (!raw) return null;
+    if (!raw) return readSSHSecretFromFallback(configId);
     const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return null;
-    return {
-      password: parsed.password ? String(parsed.password) : '',
-      privateKey: parsed.privateKey ? String(parsed.privateKey) : '',
-      passphrase: parsed.passphrase ? String(parsed.passphrase) : ''
-    };
+    const normalized = normalizeSSHSecretPayload(parsed);
+    return normalized || readSSHSecretFromFallback(configId);
   } catch (_err) {
-    return null;
+    return readSSHSecretFromFallback(configId);
   }
 }
 
